@@ -57,6 +57,7 @@ public class CoopOnlineGame {
 			CoopSetup.extraClasses.add( HeroClass.valueOf( players.get(i).heroClass ) );
 		}
 
+		CoopRemote.startHost();
 		Dungeon.hero = null;
 		Dungeon.daily = Dungeon.dailyReplay = false;
 		Dungeon.initSeed();

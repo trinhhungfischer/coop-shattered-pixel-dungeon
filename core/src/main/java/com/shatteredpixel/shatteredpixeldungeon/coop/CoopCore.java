@@ -330,6 +330,7 @@ public class CoopCore {
 	public static void onGameLoaded(){
 		fovs.clear();
 		keepPositions = Coop.active();
+		com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopRemote.afterGameLoaded();
 	}
 
 	// ---------------------------------------------------------------------------------
@@ -467,12 +468,14 @@ public class CoopCore {
 		return range;
 	}
 
-	//a hero right next to stairs that a teammate stands on can take them too (instead of swapping)
+	//a hero close enough to the stairs (within the gathering range) can take them while a teammate
+	//stands on them, instead of swapping places with that teammate
 	public static boolean nextToTeammateOnStairs( Hero h, LevelTransition t ){
 		if (!Coop.active() || t == null) return false;
 		Level level = Dungeon.level;
+		if (distanceTo( level, t, h.pos ) > transitionRange( level, t )) return false;
 		for (Hero o : Coop.aliveHeroes()){
-			if (o != h && t.inside(o.pos) && level.adjacent(h.pos, o.pos)) return true;
+			if (o != h && t.inside(o.pos)) return true;
 		}
 		return false;
 	}

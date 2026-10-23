@@ -127,6 +127,7 @@ public class CoopLobbyScene extends PixelScene {
 	@Override
 	public void update() {
 		super.update();
+		CoopRemote.clientFrame(); //the host's first snapshot arrives while the lobby is open
 		Runnable r;
 		while ((r = pending.poll()) != null) r.run();
 

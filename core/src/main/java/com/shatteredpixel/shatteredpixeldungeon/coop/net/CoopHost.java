@@ -47,7 +47,7 @@ public class CoopHost implements NetConnection.Listener {
 	}
 
 	private final int gameVersion;
-	private final Events events;
+	private volatile Events events;
 
 	private ServerSocket server;
 	private volatile boolean running = false;
@@ -84,6 +84,11 @@ public class CoopHost implements NetConnection.Listener {
 		heartbeat.start();
 
 		if (announceOnLan) beacon.start();
+	}
+
+	//the game takes over the callbacks once the run starts
+	public void setEvents( Events events ){
+		this.events = events;
 	}
 
 	public int port(){

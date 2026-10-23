@@ -64,6 +64,10 @@ public class CoopTime implements Coop.Listener {
 	//the hero the player controls in hotseat
 	private static volatile Hero focus = null;
 
+	//online play: every player controls their own hero through commands, there is no focus;
+	//a group simply waits while one of its heroes waits for its player
+	public static volatile boolean online = false;
+
 	//group id per party index, recomputed whenever a hero is about to act
 	private static int[] groupOf = new int[0];
 
@@ -222,6 +226,13 @@ public class CoopTime implements Coop.Listener {
 		return best;
 	}
 
+	//the level clock: the time of the hero furthest ahead
+	private static float leadingHeroTime(){
+		float t = -Float.MAX_VALUE;
+		for (Hero h : Coop.aliveHeroes()) t = Math.max( t, Actor.coopTime( h ) );
+		return t;
+	}
+
 	//the clock of a group: where its heroes are in time
 	private static float groupNow( List<Hero> group ){
 		float t = -Float.MAX_VALUE;
@@ -237,7 +248,12 @@ public class CoopTime implements Coop.Listener {
 	public static boolean skip( Actor actor ){
 		if (!enabled()) return false;
 		Hero owner = ownerOf( actor );
-		if (owner == null) return false;
+		if (owner == null){
+			//level-wide actors (blobs, the mob spawner, timers) follow the level clock: they never
+			//get ahead of the hero that is furthest in time. Without this they would run on and
+			//on while every hero waits for its player (online play never stops the actor loop).
+			return Actor.coopTime( actor ) > leadingHeroTime();
+		}
 		int g = group( owner );
 		if (g == -1) return false;
 		//a group is paused while one of its heroes waits for input and isn't the controlled hero
@@ -260,7 +276,7 @@ public class CoopTime implements Coop.Listener {
 			owners.clear();
 			return;
 		}
-		if (focus == null || !focus.isAlive() || Coop.isDead( focus )) focus = acting;
+		if (!online && (focus == null || !focus.isAlive() || Coop.isDead( focus ))) focus = acting;
 
 		int[] before = groupOf.clone();
 		IdentityHashMap<Actor, Hero> oldOwners = new IdentityHashMap<>( owners );
@@ -344,6 +360,10 @@ public class CoopTime implements Coop.Listener {
 		Hero h = (Hero) actor;
 		if (!isWaiting( h )) return false;
 
+		if (online){
+			Actor.releaseIfCurrent( h );
+			return true;
+		}
 		Hero f = focus;
 		if (f == null || f == h || !f.isAlive() || Coop.isDead( f ) || !isWaiting( f ) || sameGroup( f, h )){
 			focus = h;
@@ -376,7 +396,8 @@ public class CoopTime implements Coop.Listener {
 	//active hero (Dungeon.hero.cooldown()). With split clocks that can be 0 forever, so actors could
 	//keep acting at one moment without time ever moving: after many acts at the same moment, the
 	//acting (non-hero) actor is moved on by one turn.
-	public static void afterAct( Actor actor ){
+	public static void afterAct( Actor actor, boolean done ){
+		com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopRemote.afterHeroAct( actor, done );
 		if (!enabled()) {
 			spinCount = 0;
 			return;

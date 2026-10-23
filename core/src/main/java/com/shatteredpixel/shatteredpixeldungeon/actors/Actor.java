@@ -28,6 +28,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Buff;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
 import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore;
 import com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime;
+import com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopRemote;
 import com.shatteredpixel.shatteredpixeldungeon.effects.TargetedCell;
 import com.watabou.noosa.Game;
 import com.watabou.utils.Bundlable;
@@ -259,6 +260,7 @@ public abstract class Actor implements Bundlable {
 			
 			current = null;
 			if (!interrupted && !Game.switchingScene()) {
+				CoopRemote.beforeScan(); // COOP-HOOK: online host: players' commands, state for clients
 				float earliest = Float.MAX_VALUE;
 
 				synchronized (Actor.class) {
@@ -304,7 +306,7 @@ public abstract class Actor implements Bundlable {
 				} else {
 					doNext = acting.act();
 					if (!doNext && CoopTime.afterHeroWaits( acting )) doNext = true; // COOP-HOOK: other groups play on
-					CoopTime.afterAct( acting ); // COOP-HOOK: no endless turns at one moment with split clocks
+					CoopTime.afterAct( acting, doNext ); // COOP-HOOK: no endless turns at one moment with split clocks
 					if (doNext && CoopCore.runStopped()) { // COOP-HOOK: solo is (hero == null || !hero.isAlive())
 						doNext = false;
 						current = null;
@@ -367,6 +369,12 @@ public abstract class Actor implements Bundlable {
 		}
 	}
 	
+	//COOP-HOOK: an online client numbers the actors it makes itself (mirror buffs) far above the
+	//host's ids, so they never collide with the ids of chars the host sends later
+	public static synchronized void coopClientIds(){
+		nextID = Math.max( nextID, 1 << 30 );
+	}
+
 	//COOP-HOOK: clocks of separate turn groups (see coop/CoopTime)
 	public static float coopTime( Actor actor ){
 		return actor.time;

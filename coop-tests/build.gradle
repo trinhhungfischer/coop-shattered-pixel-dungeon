@@ -39,3 +39,11 @@ tasks.register('lobbySim', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.shatteredpixel.shatteredpixeldungeon.cooptest.LobbySim'
 }
+
+//online coop end to end: a host and a client game process on the loopback address
+//./gradlew coop-tests:netGameSim [-PnetDepth=4]
+tasks.register('netGameSim', JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.shatteredpixel.shatteredpixeldungeon.cooptest.NetGameRun'
+    args(project.hasProperty('netDepth') ? project.property('netDepth') : '4')
+}

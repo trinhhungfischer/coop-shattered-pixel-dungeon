@@ -24,6 +24,7 @@ package com.shatteredpixel.shatteredpixeldungeon.sprites;
 import com.shatteredpixel.shatteredpixeldungeon.Assets;
 import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
 import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
+import com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopRemote;
 import com.shatteredpixel.shatteredpixeldungeon.effects.DarkBlock;
 import com.shatteredpixel.shatteredpixeldungeon.effects.EmoIcon;
 import com.shatteredpixel.shatteredpixeldungeon.effects.Flare;
@@ -197,6 +198,7 @@ public class CharSprite extends MovieClip implements Tweener.Listener, MovieClip
 	}
 
 	public void showStatusWithIcon( int color, String text, int icon, Object... args ) {
+		CoopRemote.statusEvent( ch, color, args.length > 0 ? Messages.format( text, args ) : text ); // COOP-HOOK: online clients see it too
 		if (visible) {
 			if (args.length > 0) {
 				text = Messages.format( text, args );
@@ -258,6 +260,7 @@ public class CharSprite extends MovieClip implements Tweener.Listener, MovieClip
 	}
 	
 	public synchronized void attack( int cell, Callback callback ) {
+		CoopRemote.spriteEvent( "atk", ch, cell ); // COOP-HOOK
 		animCallback = callback;
 		turnTo( ch.pos, cell );
 		play( attack );
@@ -268,6 +271,7 @@ public class CharSprite extends MovieClip implements Tweener.Listener, MovieClip
 	}
 	
 	public synchronized void operate( int cell, Callback callback ) {
+		CoopRemote.spriteEvent( "op", ch, cell ); // COOP-HOOK
 		animCallback = callback;
 		turnTo( ch.pos, cell );
 		play( operate );
@@ -278,9 +282,22 @@ public class CharSprite extends MovieClip implements Tweener.Listener, MovieClip
 	}
 	
 	public synchronized void zap( int cell, Callback callback ) {
+		CoopRemote.spriteEvent( "zap", ch, cell ); // COOP-HOOK
 		animCallback = callback;
 		turnTo( ch.pos, cell );
 		play( zap );
+	}
+
+	//COOP-HOOK: online clients replay an action's animation only, without the sprite subclass
+	//effects and callbacks that would run game logic
+	public synchronized void coopPlay( String kind, int cell ){
+		animCallback = null;
+		if (ch != null) turnTo( ch.pos, cell );
+		switch (kind){
+			case "atk": play( attack ); break;
+			case "zap": play( zap ); break;
+			case "op":  play( operate ); break;
+		}
 	}
 	
 	public void turnTo( int from, int to ) {
@@ -830,7 +847,7 @@ public class CharSprite extends MovieClip implements Tweener.Listener, MovieClip
 
 				motion.killAndErase();
 				motion = null;
-				if (ch != null) ch.onMotionComplete();
+				if (ch != null && !CoopRemote.suppressSpriteCallbacks()) ch.onMotionComplete(); // COOP-HOOK
 
 				GameScene.sortMobSprites();
 				notifyAll();
@@ -841,6 +858,13 @@ public class CharSprite extends MovieClip implements Tweener.Listener, MovieClip
 
 	@Override
 	public synchronized void onComplete( Animation anim ) {
+
+		//COOP-HOOK: an online client's sprites only animate; the host runs what follows
+		if (CoopRemote.suppressSpriteCallbacks() && (anim == attack || anim == operate || anim == zap)){
+			animCallback = null;
+			idle();
+			return;
+		}
 		
 		if (animCallback != null) {
 			Callback executing = animCallback;

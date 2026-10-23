@@ -83,6 +83,7 @@ import com.shatteredpixel.shatteredpixeldungeon.coop.Coop;
 import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore;
 import com.shatteredpixel.shatteredpixeldungeon.coop.CoopDeaths;
 import com.shatteredpixel.shatteredpixeldungeon.coop.CoopLoot;
+import com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopRemote;
 import com.shatteredpixel.shatteredpixeldungeon.effects.CellEmitter;
 import com.shatteredpixel.shatteredpixeldungeon.effects.FloatingText;
 import com.shatteredpixel.shatteredpixeldungeon.effects.Speck;
@@ -1518,6 +1519,7 @@ public class Hero extends Char {
 	}
 	
 	public void rest( boolean fullRest ) {
+		if (CoopRemote.forwardAction( this, fullRest ? CoopRemote.ACT_REST_FULL : CoopRemote.ACT_REST )) return; // COOP-HOOK: online, a command
 		spendAndNextConstant( TIME_TO_REST );
 		if (hasTalent(Talent.HOLD_FAST)){
 			if (heroClass != HeroClass.WARRIOR || buff(BrokenSeal.WarriorShield.class) != null) {
@@ -2514,6 +2516,7 @@ public class Hero extends Char {
 	}
 
 	public boolean search( boolean intentional ) {
+		if (intentional && CoopRemote.forwardAction( this, CoopRemote.ACT_SEARCH )) return true; // COOP-HOOK: online, a command
 		
 		if (!isAlive()) return false;
 		

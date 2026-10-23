@@ -46,7 +46,7 @@ public class CoopClient implements NetConnection.Listener {
 	}
 
 	private final int gameVersion;
-	private final Events events;
+	private volatile Events events;
 
 	private NetConnection connection;
 	private volatile int slot = -1;
@@ -94,6 +94,11 @@ public class CoopClient implements NetConnection.Listener {
 			p.put( "at", now );
 			connection.send( p );
 		}
+	}
+
+	//the game takes over the callbacks once the run starts
+	public void setEvents( Events events ){
+		this.events = events;
 	}
 
 	public int slot(){

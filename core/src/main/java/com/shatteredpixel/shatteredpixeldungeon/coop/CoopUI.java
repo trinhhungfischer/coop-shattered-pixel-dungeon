@@ -22,6 +22,7 @@
 package com.shatteredpixel.shatteredpixeldungeon.coop;
 
 import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
+import com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopRemote;
 import com.shatteredpixel.shatteredpixeldungeon.actors.Actor;
 import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Buff;
@@ -147,7 +148,8 @@ public class CoopUI implements Coop.Listener {
 
 		//a hero of another turn group that just stopped to wait for its player doesn't take the screen
 		Hero focus = CoopTime.focus();
-		if (Dungeon.hero != shownHero && Dungeon.hero.ready && (focus == null || focus == Dungeon.hero || !CoopTime.enabled())){
+		boolean mine = !CoopRemote.online() || Dungeon.hero == CoopRemote.localHero();
+		if (Dungeon.hero != shownHero && Dungeon.hero.ready && mine && (focus == null || focus == Dungeon.hero || !CoopTime.enabled())){
 			boolean first = shownHero == null;
 			shownHero = Dungeon.hero;
 			GameScene.coopRefreshHeroUI(); // status pane, key holds

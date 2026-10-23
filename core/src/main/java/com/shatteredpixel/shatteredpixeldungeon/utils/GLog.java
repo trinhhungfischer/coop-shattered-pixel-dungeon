@@ -22,6 +22,7 @@
 package com.shatteredpixel.shatteredpixeldungeon.utils;
 
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
+import com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopRemote;
 import com.watabou.utils.DeviceCompat;
 import com.watabou.utils.Signal;
 
@@ -49,6 +50,7 @@ public class GLog {
 		}
 		
 		DeviceCompat.log( TAG, text );
+		CoopRemote.logEvent( text ); // COOP-HOOK: online clients get the host's log
 		update.dispatch( text );
 	}
 	
