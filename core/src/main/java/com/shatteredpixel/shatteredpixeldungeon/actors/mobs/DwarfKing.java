@@ -42,6 +42,7 @@ import com.shatteredpixel.shatteredpixeldungeon.effects.CellEmitter;
 import com.shatteredpixel.shatteredpixeldungeon.effects.Pushing;
 import com.shatteredpixel.shatteredpixeldungeon.effects.Speck;
 import com.shatteredpixel.shatteredpixeldungeon.coop.CoopBosses;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopLoot;
 import com.shatteredpixel.shatteredpixeldungeon.effects.particles.ElmoParticle;
 import com.shatteredpixel.shatteredpixeldungeon.effects.particles.ShadowParticle;
 import com.shatteredpixel.shatteredpixeldungeon.effects.particles.SparkParticle;
@@ -565,8 +566,8 @@ public class DwarfKing extends Mob {
 		} else {
 			Dungeon.level.drop(new KingsCrown(), pos).sprite.drop();
 		}
-		//COOP-HOOK: one crown per hero without an armor ability
-		for (int c = CoopBosses.crownsToDrop(); c > 1; c--) Dungeon.level.drop(new KingsCrown(), pos == CityBossLevel.throne ? pos + Dungeon.level.width() : pos).sprite.drop(pos);
+		//COOP-HOOK: every hero can loot the crown once
+		CoopLoot.tagForParty( Dungeon.level.heaps.get(pos == CityBossLevel.throne ? pos + Dungeon.level.width() : pos), KingsCrown.class );
 
 		Badges.validateBossSlain();
 		if (Statistics.qualifiedForBossChallengeBadge){

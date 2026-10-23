@@ -31,6 +31,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.hero.HeroSubClass;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Talent;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.spells.AuraOfProtection;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.spells.LifeLinkSpell;
+import com.shatteredpixel.shatteredpixeldungeon.items.artifacts.DriedRose;
 import com.watabou.utils.Bundle;
 
 /**
@@ -72,6 +73,18 @@ public class CoopAllies {
 			return owner;
 		}
 		return CoopCombat.focusHero( ally.pos );
+	}
+
+	//the Dried Rose's ghost belongs to whoever carries the rose. Solo: the hero.
+	public static Hero roseHolder( DriedRose rose ){
+		if (!Coop.active()) return Dungeon.hero;
+		for (Hero h : Coop.aliveHeroes()){
+			if (rose == null ? h.belongings.getItem( DriedRose.class ) != null
+					: h.belongings.getAllItems( DriedRose.class ).contains( rose )){
+				return h;
+			}
+		}
+		return Dungeon.hero;
 	}
 
 	//true if ch is the leader of ally (used where solo code says "ch == Dungeon.hero")

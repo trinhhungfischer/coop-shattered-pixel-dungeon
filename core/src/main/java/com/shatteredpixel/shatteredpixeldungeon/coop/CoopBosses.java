@@ -199,8 +199,8 @@ public class CoopBosses {
 		}
 	}
 
-	//how many Tengu masks to drop. Solo: 1 if the hero has no subclass, else 0.
-	//Coop: one per alive hero without a subclass.
+	//whether Tengu drops his mask. Solo: if the hero has no subclass.
+	//Coop: if any alive hero has none; that one mask can then be looted once by every hero.
 	public static int masksToDrop(){
 		if (!Coop.active()) return Dungeon.hero.subClass == HeroSubClass.NONE ? 1 : 0;
 		int n = 0;
@@ -208,16 +208,6 @@ public class CoopBosses {
 			if (h.subClass == HeroSubClass.NONE) n++;
 		}
 		return n;
-	}
-
-	//how many King's crowns to drop. Solo: 1. Coop: one per alive hero without an armor ability (at least 1).
-	public static int crownsToDrop(){
-		if (!Coop.active()) return 1;
-		int n = 0;
-		for (Hero h : Coop.aliveHeroes()){
-			if (h.armorAbility == null) n++;
-		}
-		return Math.max(1, n);
 	}
 
 	//Dwarf King badge check: solo is "src == Dungeon.hero && hero isn't fighting unarmed".
