@@ -396,7 +396,12 @@ public class CoopSim {
 		static int pausedReloads = -1;
 
 		//true when every clock was moved down together (Actor.fixTime on save), not a paused group acting
-		static boolean clocksShiftedDown( float before, float now ){
+		//a paused hero pulled into a fight is moved up to the fight's clock (and may split off
+		//again right after the fight): its clock then equals a teammate's
+		static boolean alignedToTeammate( Hero x, float now ){
+			for (Hero o : Coop.aliveHeroes()){
+				if (o != x && Math.abs( com.shatteredpixel.shatteredpixeldungeon.actors.Actor.coopTime( o ) - now ) < 0.001f) return true;
+			}
 			return false;
 		}
 		static final java.util.HashMap<Hero, Float> pausedClock = new java.util.HashMap<>();
@@ -527,7 +532,7 @@ public class CoopSim {
 							pausedReloads = reloads;
 							before = null;
 						}
-						if (before != null && now > before + 0.001f && !clocksShiftedDown(before, now)){
+						if (before != null && now > before + 0.001f && !alignedToTeammate(x, now)){
 							problem("P" + (Coop.indexOf(x)+1) + "'s group is paused but its clock moved " + before + " -> " + now + ". " + state());
 						}
 						pausedClock.put(x, now);

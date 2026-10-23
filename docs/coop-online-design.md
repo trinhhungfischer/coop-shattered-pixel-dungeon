@@ -74,6 +74,20 @@ Phần này làm và kiểm thử **trong hotseat trước** (bot headless), r�
 | M4 | Túi đồ, quickslot, dùng item, chọn mục tiêu (wand, ném, spell), cửa sổ nâng cấp/chọn item | như trên + kịch bản dùng item |
 | M5 | Quest, shop, alchemy, talent, armor ability, nối lại khi rớt mạng, snapshot sửa lệch | chơi tay qua LAN |
 
+**Trạng thái M4 (đã xong):**
+- Mọi lệnh dùng item từ UI (túi, quickslot, menu chuột phải, cửa sổ item) đi qua `CoopRemote.useItem`. Online, lệnh thành một task chạy trên render thread của host trong lúc actor thread dừng ở điểm an toàn.
+- Item được gọi tên giống nhau ở host và client qua `CoopItems`: ô trang bị là `w/a/f/m/r/s`, đồ trong túi là `i:<class>|<level>|<số lượng>|<thứ tự>`. Không dùng vị trí trong túi, vì túi trên client có thể xếp khác.
+- Khi lệnh của hero ở xa cần chọn lựa, host chuyển câu hỏi cho đúng người chơi đó:
+  - chọn ô (`pcell`), chọn item (`pitem`);
+  - `WndOptions` (`popt`);
+  - cửa sổ khác (ví dụ WndUpgrade): gom chữ và nút thành một câu hỏi `popt`, rồi bấm đúng nút đó trên cửa sổ không hiển thị ở host.
+- Quickslot của client được giữ theo đường dẫn item mỗi lần nhận lại túi đồ từ host.
+- Kiểm thử bằng `netGameSim`: client là Mage, bắn trượng (chọn ô), đọc Scroll of Upgrade (chọn item, rồi cửa sổ nâng cấp). Trượng lên +1 và checksum không lệch.
+
+**Còn lại cho M5:**
+- Cửa sổ mở sau qua `runOnRenderThread` (shop, một số NPC) chưa được chặn cho hero ở xa.
+- Client chưa hiện blob/khí, đạn bay và hiệu ứng.
+
 ## 6. Rủi ro chính
 
 - Một số hành động chỉ kết thúc khi animation xong. Host vẫn phải chạy animation (headless được, như bộ test hiện tại), nên không ảnh hưởng client.

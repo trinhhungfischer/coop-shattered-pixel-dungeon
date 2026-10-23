@@ -911,6 +911,7 @@ public class GameScene extends PixelScene {
 		}
 
 		CoopRemote.clientFrame(); // COOP-HOOK: an online client applies the host's updates
+		CoopRemote.hostRenderFrame(); // COOP-HOOK: an online host runs players' commands
 		if (!Actor.processing() && Dungeon.hero.isAlive() && !CoopRemote.onlineClient()) { // COOP-HOOK: clients run no game logic
 			if (actorThread == null || !actorThread.isAlive()) {
 				
@@ -1471,6 +1472,7 @@ public class GameScene extends PixelScene {
 	}
 	
 	public static void show( Window wnd ) {
+		if (CoopRemote.interceptWindow( wnd )) return; // COOP-HOOK: a remote hero's player chooses
 		if (scene != null) {
 			cancel();
 
@@ -1677,6 +1679,8 @@ public class GameScene extends PixelScene {
 	}
 	
 	public static void selectCell( CellSelector.Listener listener ) {
+		if (CoopRemote.interceptCell( listener )) return; // COOP-HOOK: a remote hero's player chooses
+		listener = CoopRemote.localCell( listener ); // COOP-HOOK
 		if (cellSelector.listener != null && cellSelector.listener != defaultCellListener){
 			cellSelector.listener.onSelect(null);
 		}
@@ -1698,6 +1702,8 @@ public class GameScene extends PixelScene {
 	}
 	
 	public static WndBag selectItem( WndBag.ItemSelector listener ) {
+		if (CoopRemote.interceptItem( listener )) return null; // COOP-HOOK: a remote hero's player chooses
+		listener = CoopRemote.localItem( listener ); // COOP-HOOK
 		cancel();
 
 		if (scene != null) {
