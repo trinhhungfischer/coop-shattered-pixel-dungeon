@@ -139,6 +139,16 @@ public class CoopCore {
 		if (!Coop.active()) return;
 		Coop.setActive( h );
 		ensureOwnFOV( h );
+		//the screen shows this hero's own sight: when it gets the turn back while already waiting
+		//for input, Hero.act doesn't observe again, so its last view must be shown here
+		Level level = Dungeon.level;
+		if (level != null && h.fieldOfView != level.heroFOV && h.fieldOfView.length == level.heroFOV.length){
+			System.arraycopy( h.fieldOfView, 0, level.heroFOV, 0, h.fieldOfView.length );
+			GameScene.updateFog();
+			GameScene.afterObserve();
+			CoopVision.updateTeammateSprites();
+		}
+		CoopTime.onHeroAct( h );
 	}
 
 	//called after a resting hero recomputed only its own FOV: keep the screen's FOV in sync

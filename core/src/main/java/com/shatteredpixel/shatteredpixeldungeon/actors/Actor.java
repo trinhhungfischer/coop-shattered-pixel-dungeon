@@ -27,6 +27,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.blobs.Blob;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Buff;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
 import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime;
 import com.shatteredpixel.shatteredpixeldungeon.effects.TargetedCell;
 import com.watabou.noosa.Game;
 import com.watabou.utils.Bundlable;
@@ -263,6 +264,8 @@ public abstract class Actor implements Bundlable {
 				synchronized (Actor.class) {
 					for (Actor actor : all) {
 
+						if (CoopTime.skip( actor )) continue; // COOP-HOOK: turn group paused, waiting for its player
+
 						//some actors will always go before others if time is equal.
 						if (actor.time < earliest ||
 								actor.time == earliest && (current == null || actor.actPriority > current.actPriority)) {
@@ -300,6 +303,7 @@ public abstract class Actor implements Bundlable {
 					current = null;
 				} else {
 					doNext = acting.act();
+					if (!doNext && CoopTime.afterHeroWaits( acting )) doNext = true; // COOP-HOOK: other groups play on
 					if (doNext && CoopCore.runStopped()) { // COOP-HOOK: solo is (hero == null || !hero.isAlive())
 						doNext = false;
 						current = null;
@@ -362,6 +366,15 @@ public abstract class Actor implements Bundlable {
 		}
 	}
 	
+	//COOP-HOOK: clocks of separate turn groups (see coop/CoopTime)
+	public static float coopTime( Actor actor ){
+		return actor.time;
+	}
+
+	public static void coopShift( Actor actor, float delta ){
+		actor.time += delta;
+	}
+
 	//COOP-HOOK: a hero that dies during its own turn (while waiting on an animation or input)
 	// never calls next() again, so the actor thread would wait on it forever
 	public static synchronized void releaseIfCurrent( Actor actor ) {

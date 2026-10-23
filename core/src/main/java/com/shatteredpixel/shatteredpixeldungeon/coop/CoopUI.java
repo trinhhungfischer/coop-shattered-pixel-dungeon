@@ -56,6 +56,7 @@ public class CoopUI implements Coop.Listener {
 	public static void init(){
 		Coop.addListener( INSTANCE );
 		CoopVision.init();
+		CoopTime.init();
 	}
 
 	//hero the UI and camera show: the hero whose input was last awaited. Another hero that keeps
@@ -144,7 +145,9 @@ public class CoopUI implements Coop.Listener {
 		ensureSprites();
 		processDeaths();
 
-		if (Dungeon.hero != shownHero && Dungeon.hero.ready){
+		//a hero of another turn group that just stopped to wait for its player doesn't take the screen
+		Hero focus = CoopTime.focus();
+		if (Dungeon.hero != shownHero && Dungeon.hero.ready && (focus == null || focus == Dungeon.hero || !CoopTime.enabled())){
 			boolean first = shownHero == null;
 			shownHero = Dungeon.hero;
 			GameScene.coopRefreshHeroUI(); // status pane, key holds

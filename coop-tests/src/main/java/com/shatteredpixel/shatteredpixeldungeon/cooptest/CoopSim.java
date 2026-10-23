@@ -108,7 +108,8 @@ public class CoopSim {
 		System.out.println("[SIM] ===== summary =====");
 		System.out.println("[SIM] seed=" + seed + " party=" + partySize + " depth=" + Dungeon.depth + " actions=" + Driver.actions
 				+ " saveLoads=" + Driver.reloads + " floorsDescended=" + Driver.descents
-				+ " heroSwitches=" + Driver.switches + " errorsLogged=" + errorsLogged);
+				+ " heroSwitches=" + Driver.switches + " focusSwitches=" + Driver.focusSwitches
+				+ " pausedChecks=" + Driver.pausedChecks + " errorsLogged=" + errorsLogged);
 		if (problems.isEmpty()){
 			System.out.println("[SIM] PASSED");
 		} else {
@@ -226,9 +227,20 @@ public class CoopSim {
 			}
 
 			Hero h = Dungeon.hero;
+			//with turn groups the player controls the focus hero; another group's hero can hold the
+			//pointer for a moment while it acts on its own
+			if (com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.enabled()
+					&& com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.focus() != null
+					&& h != com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.focus()){
+				if (frames - lastActionFrame > 3000){
+					problem("soft-lock: the controlled hero never got the turn back. " + state() + " | " + actorDump());
+					finish();
+				}
+				return;
+			}
 			if (!h.ready || h.curAction != null) {
 				if (frames - lastActionFrame > 3000){
-					problem("soft-lock: no hero got control for 3000 frames. " + state());
+					problem("soft-lock: no hero got control for 3000 frames. " + state() + " | " + actorDump());
 					finish();
 				}
 				return;
@@ -360,6 +372,11 @@ public class CoopSim {
 
 		static int[] expectedAfterReload = null;
 		static int sharedCellChecks = 0;
+		static boolean alignWarned = false;
+		static int fightSplitChecks = 0;
+		static final java.util.HashMap<Hero, Float> pausedClock = new java.util.HashMap<>();
+		static int pausedChecks = 0;
+		static int focusSwitches = 0;
 		static Hero lastActor = null;
 		static float lastActorNow = -1;
 		static int sameTimeActions = 0;
@@ -439,6 +456,56 @@ public class CoopSim {
 				problem("active hero cannot see its own cell (FOV not updated). " + state());
 			}
 			if (Dungeon.quickslot == null) problem("quickslot is null");
+
+			//turn groups: heroes in one group share a clock, a paused group's clock stands still
+			if (com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.enabled()){
+				List<Hero> alive = Coop.aliveHeroes();
+				for (Hero x : alive){
+					for (Hero y : alive){
+						if (x == y || Coop.indexOf(x) > Coop.indexOf(y)) continue;
+						if (com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.sameGroup(x, y)){
+							float dt = Math.abs(com.shatteredpixel.shatteredpixeldungeon.actors.Actor.coopTime(x) - com.shatteredpixel.shatteredpixeldungeon.actors.Actor.coopTime(y));
+							if (dt > 6 && !alignWarned){
+								alignWarned = true;
+								problem("P" + (Coop.indexOf(x)+1) + " and P" + (Coop.indexOf(y)+1) + " share a turn group but their clocks are " + dt + " apart. " + state());
+							}
+						}
+					}
+				}
+				//heroes in the same fight (or facing an awake boss) must take turns together
+				boolean split = false;
+				String why = "";
+				for (Mob m : Dungeon.level.mobs){
+					if (!m.isAlive() || m.alignment != com.shatteredpixel.shatteredpixeldungeon.actors.Char.Alignment.ENEMY || m.state != m.HUNTING) continue;
+					boolean boss = com.shatteredpixel.shatteredpixeldungeon.actors.Char.hasProp(m, com.shatteredpixel.shatteredpixeldungeon.actors.Char.Property.BOSS);
+					Hero first = null;
+					for (Hero x : alive){
+						boolean engaged = boss || m.isTargeting(x) || (x.fieldOfView != null && x.fieldOfView[m.pos]);
+						if (!engaged) continue;
+						if (first == null) first = x;
+						else if (!com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.sameGroup(first, x)){ split = true; why = m.getClass().getSimpleName(); }
+					}
+				}
+				fightSplitChecks = split ? fightSplitChecks + 1 : 0;
+				if (fightSplitChecks == 4){
+					problem("heroes in the same fight (" + why + ") are in different turn groups. " + state());
+				}
+
+				for (Hero x : alive){
+					boolean paused = x != com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.focus() && com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.isWaiting(x) && !com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.sameGroup(x, com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.focus());
+					Float before = pausedClock.get(x);
+					float now = com.shatteredpixel.shatteredpixeldungeon.actors.Actor.coopTime(x);
+					if (paused){
+						if (before != null && before != now){
+							problem("P" + (Coop.indexOf(x)+1) + "'s group is paused but its clock moved " + before + " -> " + now + ". " + state());
+						}
+						pausedClock.put(x, now);
+						pausedChecks++;
+					} else {
+						pausedClock.remove(x);
+					}
+				}
+			}
 		}
 
 		static final java.util.HashMap<Hero, Integer> lastPos = new java.util.HashMap<>();
@@ -591,6 +658,7 @@ public class CoopSim {
 				if (level.distance(o.pos, exit.cell()) > com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore.transitionRange(level, exit)) partyGathered = false;
 			}
 
+			if (!partyGathered && switchToSeparatedTeammate( h )) return;
 			if (onExit && !partyGathered){
 				//wait for the teammate at the stairs
 				h.rest( false );
@@ -675,6 +743,21 @@ public class CoopSim {
 				farCellCache = best;
 			}
 			return farCellCache;
+		}
+
+		//DOS2 turn groups: a teammate in another group is paused until someone takes control of it
+		static boolean switchToSeparatedTeammate( Hero h ){
+			if (!com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.enabled()) return false;
+			LevelTransition exit = Dungeon.level.getTransition( LevelTransition.Type.REGULAR_EXIT );
+			for (Hero o : Coop.aliveHeroes()){
+				if (o == h || com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.sameGroup(o, h)) continue;
+				if (exit != null && Dungeon.level.distance(h.pos, exit.cell()) > 2 && actions % 9 != 0) continue;
+				if (com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.requestFocus( o )){
+					focusSwitches++;
+					return true;
+				}
+			}
+			return false;
 		}
 
 		static void doHandle( Hero h, int cell ){
@@ -809,7 +892,10 @@ public class CoopSim {
 			StringBuilder sb = new StringBuilder();
 			sb.append("depth=").append(Dungeon.depth).append(" actions=").append(actions)
 					.append(" active=P").append(Coop.indexOf(Dungeon.hero)+1)
-					.append(" actorProcessing=").append(com.shatteredpixel.shatteredpixeldungeon.actors.Actor.processing());
+					.append(" actorProcessing=").append(com.shatteredpixel.shatteredpixeldungeon.actors.Actor.processing())
+					.append(" focus=P").append(com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.focus() == null ? 0 : Coop.indexOf(com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.focus())+1);
+			for (Hero x : Coop.heroes()) sb.append(" t").append(Coop.indexOf(x)+1).append("=").append(com.shatteredpixel.shatteredpixeldungeon.actors.Actor.coopTime(x))
+					.append(com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.sameGroup(x, com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.focus()) ? "(f)" : "");
 			if (Dungeon.level != null){
 				LevelTransition ex = Dungeon.level.getTransition( LevelTransition.Type.REGULAR_EXIT );
 				sb.append(" locked=").append(Dungeon.level.locked);
