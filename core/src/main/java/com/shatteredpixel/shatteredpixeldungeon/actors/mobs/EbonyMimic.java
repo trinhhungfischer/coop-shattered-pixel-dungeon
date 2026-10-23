@@ -39,6 +39,8 @@ import com.shatteredpixel.shatteredpixeldungeon.levels.features.Door;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.MimicSprite;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCombat;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopVision;
 import com.watabou.noosa.audio.Sample;
 
 public class EbonyMimic extends Mimic {
@@ -73,9 +75,9 @@ public class EbonyMimic extends Mimic {
 	public void stopHiding(){
 		state = HUNTING;
 		if (sprite != null) sprite.idle();
-		if (Actor.chars().contains(this) && Dungeon.level.heroFOV[pos]) {
-			enemy = Dungeon.hero;
-			target = Dungeon.hero.pos;
+		if (Actor.chars().contains(this) && CoopVision.seenByAnyHero(Dungeon.level, pos)) { // COOP-HOOK: seen by any hero
+			enemy = CoopCombat.focusHero(pos); // COOP-HOOK: closest hero (was Dungeon.hero)
+			target = enemy.pos;
 			GLog.w(Messages.get(this, "reveal") );
 			CellEmitter.get(pos).burst(Speck.factory(Speck.STAR), 10);
 			Sample.INSTANCE.play(Assets.Sounds.MIMIC, 1, 0.85f);

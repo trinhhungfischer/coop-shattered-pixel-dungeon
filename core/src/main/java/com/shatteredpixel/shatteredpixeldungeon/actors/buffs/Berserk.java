@@ -36,6 +36,8 @@ import com.shatteredpixel.shatteredpixeldungeon.ui.ActionIndicator;
 import com.shatteredpixel.shatteredpixeldungeon.ui.BuffIndicator;
 import com.shatteredpixel.shatteredpixeldungeon.ui.HeroIcon;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCombat;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopDeaths;
 import com.watabou.noosa.BitmapText;
 import com.watabou.noosa.Image;
 import com.watabou.noosa.Visual;
@@ -116,7 +118,7 @@ public class Berserk extends ShieldBuff implements ActionIndicator.Action {
 					BuffIndicator.refreshHero();
 					if (!target.isAlive()){
 						target.die(this);
-						if (!target.isAlive()) Dungeon.fail(this);
+						if (!target.isAlive()) CoopDeaths.fail(target, this); // COOP-HOOK
 					}
 				}
 
@@ -125,7 +127,7 @@ public class Berserk extends ShieldBuff implements ActionIndicator.Action {
 				power = 0f;
 				if (!target.isAlive()){
 					target.die(this);
-					if (!target.isAlive()) Dungeon.fail(this);
+					if (!target.isAlive()) CoopDeaths.fail(target, this); // COOP-HOOK
 				}
 
 			}
@@ -322,7 +324,7 @@ public class Berserk extends ShieldBuff implements ActionIndicator.Action {
 				return 1f - shielding() / (float)maxShieldBoost();
 			case RECOVERING:
 				if (levelRecovery > 0) {
-					return levelRecovery/(LEVEL_RECOVER_START-Dungeon.hero.pointsInTalent(Talent.DEATHLESS_FURY));
+					return levelRecovery/(LEVEL_RECOVER_START-CoopCombat.heroOf(target).pointsInTalent(Talent.DEATHLESS_FURY)); // COOP-HOOK
 				} else {
 					return turnRecovery/(float)TURN_RECOVERY_START;
 				}

@@ -35,6 +35,8 @@ import com.shatteredpixel.shatteredpixeldungeon.mechanics.Ballistica;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
 import com.shatteredpixel.shatteredpixeldungeon.scenes.GameScene;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.GuardSprite;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore;
+import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.watabou.noosa.audio.Sample;
 import com.watabou.utils.Bundle;
 import com.watabou.utils.Callback;
@@ -125,8 +127,8 @@ public class Guard extends Mob {
 		enemy.sprite.place(pullPos);
 		Dungeon.level.occupyCell(enemy);
 		Cripple.prolong(enemy, Cripple.class, 4f);
-		if (enemy == Dungeon.hero) {
-			Dungeon.hero.interrupt();
+		if (CoopCore.isPartyHero(enemy)) { // COOP-HOOK: the pulled hero (was Dungeon.hero)
+			((Hero)enemy).interrupt();
 			Dungeon.observe();
 			GameScene.updateFog();
 		} else {

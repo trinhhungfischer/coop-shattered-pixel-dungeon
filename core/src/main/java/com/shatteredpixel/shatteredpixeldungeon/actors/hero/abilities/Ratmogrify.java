@@ -48,6 +48,8 @@ import com.shatteredpixel.shatteredpixeldungeon.sprites.RatSprite;
 import com.shatteredpixel.shatteredpixeldungeon.ui.HeroIcon;
 import com.shatteredpixel.shatteredpixeldungeon.ui.TargetHealthIndicator;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopAllies;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopVision;
 import com.watabou.noosa.audio.Sample;
 import com.watabou.utils.Bundle;
 import com.watabou.utils.PathFinder;
@@ -110,6 +112,7 @@ public class Ratmogrify extends ArmorAbility {
 					rat.alignment = Char.Alignment.ALLY;
 					rat.state = rat.HUNTING;
 					Buff.affect(rat, AscensionChallenge.AscensionBuffBlocker.class);
+					CoopVision.setOwner(rat, hero); // COOP-HOOK
 					GameScene.add( rat );
 					ScrollOfTeleportation.appear( rat, spawnPoints.get( index ) );
 
@@ -126,6 +129,7 @@ public class Ratmogrify extends ArmorAbility {
 				GLog.w(Messages.get(this, "cant_transform"));
 				return;
 			} else {
+				CoopVision.setOwner(ch, hero); // COOP-HOOK: the hero who made it an ally
 				((TransmogRat) ch).makeAlly();
 				ch.sprite.emitter().start(Speck.factory(Speck.HEART), 0.2f, 5);
 				Sample.INSTANCE.play(Assets.Sounds.TELEPORT);
@@ -140,6 +144,7 @@ public class Ratmogrify extends ArmorAbility {
 			TransmogRat rat = new TransmogRat();
 			rat.setup((Mob)ch);
 			rat.pos = ch.pos;
+			CoopVision.setOwner(rat, hero); // COOP-HOOK: the caster (for ratsistance)
 
 			//preserve some buffs
 			HashSet<Buff> persistentBuffs = new HashSet<>();
@@ -263,7 +268,7 @@ public class Ratmogrify extends ArmorAbility {
 			if (original != null){
 				original.pos = pos;
 				//the specific ally buff doesn't matter here, we just want to process ally effects
-				AllyBuff.affectAndLoot(original, Dungeon.hero, ScrollOfSirensSong.Enthralled.class);
+				AllyBuff.affectAndLoot(original, CoopAllies.summoner(this), ScrollOfSirensSong.Enthralled.class); // COOP-HOOK: the caster
 			}
 		}
 
@@ -278,8 +283,9 @@ public class Ratmogrify extends ArmorAbility {
 		@Override
 		public int damageRoll() {
 			int damage = original.damageRoll();
-			if (!allied && Dungeon.hero.hasTalent(Talent.RATSISTANCE)){
-				damage *= Math.pow(0.9f, Dungeon.hero.pointsInTalent(Talent.RATSISTANCE));
+			Hero caster = CoopAllies.summoner(this); // COOP-HOOK: the caster's talent (was Dungeon.hero)
+			if (!allied && caster.hasTalent(Talent.RATSISTANCE)){
+				damage *= Math.pow(0.9f, caster.pointsInTalent(Talent.RATSISTANCE));
 			}
 			return damage;
 		}

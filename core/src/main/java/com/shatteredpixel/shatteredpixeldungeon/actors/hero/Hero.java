@@ -81,6 +81,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Snake;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.Imp;
 import com.shatteredpixel.shatteredpixeldungeon.coop.Coop;
 import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopDeaths;
 import com.shatteredpixel.shatteredpixeldungeon.coop.CoopLoot;
 import com.shatteredpixel.shatteredpixeldungeon.effects.CellEmitter;
 import com.shatteredpixel.shatteredpixeldungeon.effects.FloatingText;
@@ -1446,7 +1447,8 @@ public class Hero extends Char {
 			ready();
 			return false;
 
-		} else if (!Dungeon.level.locked && transition != null && transition.inside(pos)) {
+		} else if (!Dungeon.level.locked && transition != null
+				&& (transition.inside(pos) || CoopCore.nextToTeammateOnStairs(this, transition))) { // COOP-HOOK
 
 			if (!CoopCore.canPartyTransition(this, transition)){ // COOP-HOOK: whole party must be near the stairs
 				ready();
@@ -1959,7 +1961,9 @@ public class Hero extends Char {
 
 		} else if (Coop.isHero(ch) && ch != this && fieldOfView[cell]) { // COOP-HOOK: tap a teammate to swap places
 
-			curAction = new HeroAction.Interact( ch );
+			//a teammate standing on the stairs: tapping them means taking the stairs
+			if (Dungeon.level.getTransition( cell ) != null) curAction = new HeroAction.LvlTransition( cell );
+			else curAction = new HeroAction.Interact( ch );
 
 		} else if (ch instanceof Mob && (fieldOfView[cell] || Char.hasProp(ch, Property.OBJECT))) {
 
@@ -2253,7 +2257,10 @@ public class Hero extends Char {
 		
 		Actor.fixTime();
 		super.die( cause );
-		if (CoopCore.spectate( this, cause )) return; // COOP-HOOK: other heroes alive -> spectator, no game over
+		if (CoopCore.spectate( this, cause )) { // COOP-HOOK: other heroes alive -> spectator, no game over
+			CoopDeaths.onSpectatorDeath( this, cause ); // COOP-HOOK: death message and badges
+			return;
+		}
 		reallyDie( cause );
 	}
 	

@@ -32,6 +32,7 @@ import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
 import com.shatteredpixel.shatteredpixeldungeon.scenes.GameScene;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.SpawnerSprite;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCombat;
 import com.watabou.utils.Bundle;
 import com.watabou.utils.PathFinder;
 import com.watabou.utils.Random;
@@ -87,7 +88,7 @@ public class DemonSpawner extends Mob {
 			spawnRecorded = true;
 		}
 
-		if (Dungeon.hero.buff(AscensionChallenge.class) != null && spawnCooldown > 20){
+		if (CoopCombat.anyHeroHas(AscensionChallenge.class) && spawnCooldown > 20){ // COOP-HOOK: any hero
 			spawnCooldown = 20;
 		}
 

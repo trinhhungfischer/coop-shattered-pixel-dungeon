@@ -642,6 +642,7 @@ public class Dungeon {
 			bundle.put( LAST_PLAYED, lastPlayed = Game.realTime);
 			bundle.put( CHALLENGES, challenges );
 			bundle.put( MOBS_TO_CHAMPION, mobsToChampion );
+			synchronized (CoopQuickslots.class) { // COOP-HOOK: no quickslot swap from a turn change mid-save
 			CoopQuickslots.beforeSave(); // COOP-HOOK: Dungeon.quickslot = primary's while HERO is stored
 			bundle.put( HERO, CoopCore.heroToSave() ); // COOP-HOOK: primary hero (== hero in solo)
 			Coop.store( bundle ); // COOP-HOOK
@@ -658,6 +659,7 @@ public class Dungeon {
 
 			quickslot.storePlaceholders( bundle );
 			CoopQuickslots.afterSave(); // COOP-HOOK
+			} // COOP-HOOK
 
 			Bundle limDrops = new Bundle();
 			LimitedDrops.store( limDrops );

@@ -30,6 +30,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Cripple;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Doom;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.PinCushion;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopBosses;
 import com.shatteredpixel.shatteredpixeldungeon.effects.FloatingText;
 import com.shatteredpixel.shatteredpixeldungeon.effects.Splash;
 import com.shatteredpixel.shatteredpixeldungeon.journal.Bestiary;
@@ -124,7 +125,7 @@ public class CrystalGuardian extends Mob{
 	@Override
 	public boolean attack(Char enemy, float dmgMulti, float dmgBonus, float accMulti) {
 		//if enemy is hero, and they aren't currently fighting the spire, -100 points
-		if (enemy == Dungeon.hero){
+		if (CoopBosses.isHero(enemy)){ // COOP-HOOK: was enemy == Dungeon.hero
 			boolean spireNear = false;
 			for (Mob m : Dungeon.level.mobs.toArray(new Mob[0])){
 				if (m instanceof CrystalSpire && m.HP != m.HT && Dungeon.level.distance(pos, m.pos) <= 8){

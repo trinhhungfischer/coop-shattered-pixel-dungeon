@@ -24,6 +24,7 @@ package com.shatteredpixel.shatteredpixeldungeon.actors.buffs;
 import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
 import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
 import com.shatteredpixel.shatteredpixeldungeon.ui.BuffIndicator;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore;
 import com.watabou.utils.Bundle;
 
 public class Charm extends FlavourBuff {
@@ -69,7 +70,7 @@ public class Charm extends FlavourBuff {
 
 	public void recover(Object src) {
 		if (ignoreHeroAllies && src instanceof Char){
-			if (src != Dungeon.hero && ((Char) src).alignment == Char.Alignment.ALLY){
+			if (!CoopCore.isPartyHero(src) && ((Char) src).alignment == Char.Alignment.ALLY){ // COOP-HOOK: hits by any party hero break charm
 				return;
 			}
 		}

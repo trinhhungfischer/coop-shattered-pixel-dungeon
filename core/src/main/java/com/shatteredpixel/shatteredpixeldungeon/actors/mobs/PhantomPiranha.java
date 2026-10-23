@@ -32,6 +32,7 @@ import com.shatteredpixel.shatteredpixeldungeon.items.wands.Wand;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.PhantomPiranhaSprite;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCombat;
 import com.watabou.utils.PathFinder;
 import com.watabou.utils.Random;
 
@@ -50,7 +51,7 @@ public class PhantomPiranha extends Piranha {
 	public void damage(int dmg, Object src) {
 		Char dmgSource = null;
 		if (src instanceof Char) dmgSource = (Char)src;
-		if (src instanceof Wand || src instanceof ClericSpell) dmgSource = Dungeon.hero;
+		if (src instanceof Wand || src instanceof ClericSpell) dmgSource = CoopCombat.attributedHero(this); // COOP-HOOK: was Dungeon.hero
 
 		if (dmgSource == null || !Dungeon.level.adjacent(pos, dmgSource.pos)){
 			dmg = Math.round(dmg/2f); //halve damage taken if we are going to teleport

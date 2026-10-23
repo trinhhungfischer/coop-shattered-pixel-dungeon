@@ -26,6 +26,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Talent;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
 import com.shatteredpixel.shatteredpixeldungeon.scenes.GameScene;
 import com.shatteredpixel.shatteredpixeldungeon.ui.BuffIndicator;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCombat;
 import com.watabou.noosa.Image;
 import com.watabou.utils.Bundle;
 
@@ -55,7 +56,7 @@ public class RevealedArea extends FlavourBuff{
 
 	@Override
 	public float iconFadePercent() {
-		float max = 5*Dungeon.hero.pointsInTalent(Talent.SEER_SHOT);
+		float max = 5*CoopCombat.heroOf(target).pointsInTalent(Talent.SEER_SHOT); // COOP-HOOK
 		return Math.max(0, (max-visualcooldown()) / max);
 	}
 

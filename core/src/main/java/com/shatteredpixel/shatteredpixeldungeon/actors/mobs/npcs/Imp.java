@@ -44,6 +44,9 @@ import com.shatteredpixel.shatteredpixeldungeon.scenes.GameScene;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.ImpSprite;
 import com.shatteredpixel.shatteredpixeldungeon.windows.WndImpOld;
 import com.shatteredpixel.shatteredpixeldungeon.windows.WndQuest;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCombat;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopQuestsImp;
+import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.watabou.noosa.Game;
 import com.watabou.utils.Bundle;
 import com.watabou.utils.Callback;
@@ -69,7 +72,7 @@ public class Imp extends NPC {
 
 	@Override
 	protected boolean act() {
-		if (Dungeon.hero.buff(AscensionChallenge.class) != null){
+		if (CoopCombat.anyHeroHas(AscensionChallenge.class)){ // COOP-HOOK: any hero
 			die(null);
 			return true;
 		}
@@ -80,9 +83,10 @@ public class Imp extends NPC {
 			throwItems();
 			Quest.reward = null;
 		}
+		CoopQuestsImp.dropPending(this); // COOP-HOOK: teammates' rewards that didn't fit
 
 		if (Quest.isCompleted() && Quest.score > 2000
-				&& fieldOfView != null && !fieldOfView[Dungeon.hero.pos]){
+				&& fieldOfView != null && !seesAnyHero()){ // COOP-HOOK: was !fieldOfView[Dungeon.hero.pos]
 			flee();
 		} else if (!Quest.given && Dungeon.level.visited[pos]) {
 			if (!seenBefore && Dungeon.level.heroFOV[pos]) {
@@ -96,6 +100,14 @@ public class Imp extends NPC {
 		return super.act();
 	}
 	
+	//COOP-HOOK: solo: fieldOfView[Dungeon.hero.pos]. Coop: any alive hero on the level.
+	private boolean seesAnyHero(){
+		for (Hero h : CoopCombat.heroesHere()){
+			if (fieldOfView.length > h.pos && fieldOfView[h.pos]) return true;
+		}
+		return !Dungeon.hero.isAlive() && fieldOfView[Dungeon.hero.pos];
+	}
+
 	@Override
 	public int defenseSkill( Char enemy ) {
 		return INFINITE_EVASION;
@@ -127,6 +139,7 @@ public class Imp extends NPC {
 
 		//pre v4.4.0 logic
 		if (Quest.oldQuest) {
+			if (CoopQuestsImp.oldInteract(this, (Hero)c)) return true; // COOP-HOOK: teammates claim their copy
 			if (Quest.given) {
 
 				DwarfToken tokens = Dungeon.hero.belongings.getItem(DwarfToken.class);
@@ -229,6 +242,7 @@ public class Imp extends NPC {
 			hazardFreebies = 2;
 			mirrorUsed = false;
 			score = 0;
+			CoopQuestsImp.reset(); // COOP-HOOK
 		}
 		
 		private static final String NODE        = "demon";
@@ -266,6 +280,7 @@ public class Imp extends NPC {
 				node.put( SCORE, score );
 				node.put( REWARD_OPTIONS, rewardOptions );
 				node.put( MIRROR_USED, mirrorUsed );
+				CoopQuestsImp.store( node ); // COOP-HOOK
 			}
 			
 			bundle.put( NODE, node );
@@ -299,6 +314,9 @@ public class Imp extends NPC {
 				
 				given = node.getBoolean( GIVEN );
 				completed = node.getBoolean( COMPLETED );
+				CoopQuestsImp.restore( node ); // COOP-HOOK
+			} else {
+				CoopQuestsImp.reset(); // COOP-HOOK
 			}
 		}
 

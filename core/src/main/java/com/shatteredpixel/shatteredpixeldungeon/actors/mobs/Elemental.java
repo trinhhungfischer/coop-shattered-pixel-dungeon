@@ -54,6 +54,11 @@ import com.shatteredpixel.shatteredpixeldungeon.scenes.GameScene;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.CharSprite;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.ElementalSprite;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopDeaths;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCombat;
+import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopMobs;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore;
 import com.watabou.noosa.Game;
 import com.watabou.noosa.audio.Music;
 import com.watabou.noosa.audio.Sample;
@@ -321,7 +326,7 @@ public abstract class Elemental extends Mob {
 				if (!candidates.isEmpty()){
 					targetingPos = Random.element(candidates);
 
-					float delay = GameMath.gate(attackDelay(), (int)Math.ceil(Dungeon.hero.cooldown()), 3*attackDelay());
+					float delay = GameMath.gate(attackDelay(), (int)Math.ceil(CoopMobs.heroToInterrupt(enemy).cooldown()), 3*attackDelay()); // COOP-HOOK: the targeted hero
 
 					for (int i : PathFinder.NEIGHBOURS9){
 						if (!Dungeon.level.solid[targetingPos + i]) {
@@ -331,7 +336,7 @@ public abstract class Elemental extends Mob {
 
 					GLog.n(Messages.get(this, "charging"));
 					spend(delay);
-					Dungeon.hero.interrupt();
+					CoopMobs.heroToInterrupt(enemy).interrupt(); // COOP-HOOK: the targeted hero (was Dungeon.hero)
 					return true;
 				} else {
 					rangedCooldown = 1;
@@ -371,7 +376,7 @@ public abstract class Elemental extends Mob {
 						Char target = Actor.findChar(targetingPos + i);
 						if (target != null && target != this) {
 							Buff.affect(target, Burning.class).reignite(target);
-							if (target == Dungeon.hero){
+							if (CoopCore.isPartyHero(target)){ // COOP-HOOK: any party hero
 								Statistics.questScores[1] -= 200;
 							}
 						}
@@ -528,10 +533,10 @@ public abstract class Elemental extends Mob {
 			
 			for (Char ch : affected) {
 				ch.damage( Math.round( damage * 0.4f ), new Shocking() );
-				if (ch == Dungeon.hero && !ch.isAlive()){
+				if (CoopDeaths.heroDied(ch)){ // COOP-HOOK: any party hero
 					Badges.validateDeathFromEnemyMagic();
-					Dungeon.fail(this);
-					GLog.n( Messages.capitalize(Messages.get(Char.class, "kill", name())) );
+					CoopDeaths.fail(ch, this); // COOP-HOOK
+					CoopCombat.logHeroKilled((Hero)ch, this); // COOP-HOOK: names the victim in coop
 				}
 			}
 

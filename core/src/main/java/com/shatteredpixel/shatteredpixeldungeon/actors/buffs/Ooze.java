@@ -25,6 +25,7 @@ import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
 import com.shatteredpixel.shatteredpixeldungeon.ui.BuffIndicator;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopDeaths;
 import com.watabou.utils.Bundle;
 
 public class Ooze extends Buff implements Buff.DOTbuff {
@@ -103,9 +104,9 @@ public class Ooze extends Buff implements Buff.DOTbuff {
 				target.damage(1, this); //0.5 dmg per turn in sewers
 			}
 
-			if (!target.isAlive() && target == Dungeon.hero) {
-				Dungeon.fail( this );
-				GLog.n( Messages.get(this, "ondeath") );
+			if (CoopDeaths.heroDied(target)) { // COOP-HOOK: any party hero
+				CoopDeaths.fail(target, this); // COOP-HOOK
+				CoopDeaths.log(target, Messages.get(this, "ondeath")); // COOP-HOOK
 			}
 			spend( TICK );
 			left -= TICK;

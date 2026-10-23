@@ -41,6 +41,7 @@ import com.shatteredpixel.shatteredpixeldungeon.scenes.GameScene;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.CharSprite;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.EyeSprite;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopDeaths;
 import com.watabou.utils.Bundle;
 import com.watabou.utils.PathFinder;
 import com.watabou.utils.Random;
@@ -200,10 +201,10 @@ public class Eye extends Mob {
 					CellEmitter.center( pos ).burst( PurpleParticle.BURST, Random.IntRange( 1, 2 ) );
 				}
 
-				if (!ch.isAlive() && ch == Dungeon.hero) {
+				if (CoopDeaths.heroDied(ch)) { // COOP-HOOK: any party hero
 					Badges.validateDeathFromEnemyMagic();
-					Dungeon.fail( this );
-					GLog.n( Messages.get(this, "deathgaze_kill") );
+					CoopDeaths.fail(ch, this); // COOP-HOOK
+					CoopDeaths.log(ch, Messages.get(this, "deathgaze_kill")); // COOP-HOOK
 				}
 			} else {
 				ch.sprite.showStatus( CharSprite.NEUTRAL,  ch.defenseVerb() );

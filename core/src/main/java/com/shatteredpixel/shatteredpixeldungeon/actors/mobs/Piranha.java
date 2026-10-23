@@ -35,6 +35,7 @@ import com.shatteredpixel.shatteredpixeldungeon.effects.Speck;
 import com.shatteredpixel.shatteredpixeldungeon.items.food.MysteryMeat;
 import com.shatteredpixel.shatteredpixeldungeon.items.trinkets.RatSkull;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.PiranhaSprite;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore;
 import com.watabou.utils.BArray;
 import com.watabou.utils.PathFinder;
 import com.watabou.utils.Random;
@@ -97,7 +98,7 @@ public class Piranha extends Mob {
 
 	@Override
 	public boolean surprisedBy(Char enemy, boolean attacking) {
-		if (enemy == Dungeon.hero && (!attacking || ((Hero)enemy).canSurpriseAttack())){
+		if (CoopCore.isPartyHero(enemy) && (!attacking || ((Hero)enemy).canSurpriseAttack())){ // COOP-HOOK: any party hero
 			if (fieldOfView == null || fieldOfView.length != Dungeon.level.length()){
 				fieldOfView = new boolean[Dungeon.level.length()];
 				Dungeon.level.updateFieldOfView( this, fieldOfView );

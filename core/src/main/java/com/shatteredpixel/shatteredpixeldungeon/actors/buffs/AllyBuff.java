@@ -31,6 +31,9 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
 import com.shatteredpixel.shatteredpixeldungeon.effects.FloatingText;
 import com.shatteredpixel.shatteredpixeldungeon.journal.Bestiary;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.CharSprite;
+import com.shatteredpixel.shatteredpixeldungeon.coop.Coop;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCombat;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopVision;
 
 //generic class for buffs which convert an enemy into an ally
 // There is a decent amount of logic that ties into this, which is why it has its own abstract class
@@ -69,6 +72,12 @@ public abstract class AllyBuff extends Buff {
 			Bestiary.countEncounter(enemy.getClass());
 
 			AscensionChallenge.processEnemyKill(enemy);
+
+			CoopVision.setOwner(enemy, hero); // COOP-HOOK: the hero who made the ally
+			if (Coop.active()){
+				CoopCombat.awardKillExp(enemy); // COOP-HOOK: like a kill, every hero here gets the exp
+				return;
+			}
 
 			int exp = hero.lvl <= enemy.maxLvl ? enemy.EXP : 0;
 			if (exp > 0) {

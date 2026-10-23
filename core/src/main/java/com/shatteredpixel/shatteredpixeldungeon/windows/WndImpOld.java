@@ -32,6 +32,7 @@ import com.shatteredpixel.shatteredpixeldungeon.ui.RedButton;
 import com.shatteredpixel.shatteredpixeldungeon.ui.RenderedTextBlock;
 import com.shatteredpixel.shatteredpixeldungeon.ui.Window;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopQuestsImp;
 
 public class WndImpOld extends Window {
 	
@@ -57,7 +58,7 @@ public class WndImpOld extends Window {
 		RedButton btnReward = new RedButton( Messages.get(this, "reward") ) {
 			@Override
 			protected void onClick() {
-				takeReward( imp, tokens, Imp.Quest.reward );
+				takeReward( imp, tokens, CoopQuestsImp.oldReward(Imp.Quest.reward) ); // COOP-HOOK: teammates get a copy
 			}
 		};
 		btnReward.setRect( 0, message.top() + message.height() + GAP, WIDTH, BTN_HEIGHT );
@@ -73,6 +74,8 @@ public class WndImpOld extends Window {
 		tokens.detachAll( Dungeon.hero.belongings.backpack );
 		if (reward == null) return;
 
+		boolean firstClaim = CoopQuestsImp.isFirstOldClaim(); // COOP-HOOK: always true in solo
+		boolean stay = CoopQuestsImp.oldClaim( Dungeon.hero, reward ); // COOP-HOOK: always false in solo
 		reward.identify(false);
 		if (reward.doPickUp( Dungeon.hero )) {
 			GLog.i( Messages.capitalize(Messages.get(Dungeon.hero, "you_now_have", reward.name())) );
@@ -80,8 +83,8 @@ public class WndImpOld extends Window {
 			Dungeon.level.drop( reward, imp.pos ).sprite.drop();
 		}
 		
-		imp.flee();
+		if (!stay) imp.flee(); // COOP-HOOK: stays until every alive hero claimed
 		
-		Imp.Quest.oldComplete();
+		if (firstClaim) Imp.Quest.oldComplete(); // COOP-HOOK: the quest completes once
 	}
 }

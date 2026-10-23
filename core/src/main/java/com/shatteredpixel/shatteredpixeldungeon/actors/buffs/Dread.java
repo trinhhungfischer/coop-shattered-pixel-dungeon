@@ -26,6 +26,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
 import com.shatteredpixel.shatteredpixeldungeon.ui.BuffIndicator;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopMobs;
 import com.watabou.noosa.Image;
 import com.watabou.utils.Bundle;
 
@@ -59,8 +60,7 @@ public class Dread extends Buff {
 	@Override
 	public boolean act() {
 
-		if (!Dungeon.level.heroFOV[target.pos]
-				&& Dungeon.level.distance(target.pos, Dungeon.hero.pos) >= 6) {
+		if (CoopMobs.escapedFromHeroes(target.pos, 6)) { // COOP-HOOK: unseen and away from every hero
 			if (target instanceof Mob){
 				((Mob) target).EXP /= 2;
 			}

@@ -48,6 +48,7 @@ import com.shatteredpixel.shatteredpixeldungeon.windows.WndBag;
 import com.shatteredpixel.shatteredpixeldungeon.windows.WndError;
 import com.shatteredpixel.shatteredpixeldungeon.windows.WndOptions;
 import com.shatteredpixel.shatteredpixeldungeon.windows.WndTitledMessage;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopQuestsImp;
 import com.watabou.noosa.Game;
 import com.watabou.noosa.audio.Sample;
 import com.watabou.utils.Bundle;
@@ -85,14 +86,14 @@ public class EscapeCrystal extends Item {
 
 				//pre-v4.0.0 saves still in the vault tester area
 				if (Imp.Quest.isOld()){
-					leaveVault(null, 0);
+					leaveVault(hero, null, 0); // COOP-HOOK: the crystal's user (was Dungeon.hero)
 					return;
 				}
 
 				int score = 0;
 
 				//firstly, score is always a full 4k if the hero had the statue
-				if (hero.belongings.getItem(ImpStatue.class) != null){
+				if (CoopQuestsImp.partyHas(hero, ImpStatue.class)){ // COOP-HOOK: any hero in the party
 					score = 4000;
 				} else {
 					//otherwise there is partial score, to a max of 3k:
@@ -111,9 +112,9 @@ public class EscapeCrystal extends Item {
 					if (doorOpened){
 						score += 1250; //1000 for tokens, 250 for door
 					} else {
-						Item tokens = hero.belongings.getItem(DwarfToken.class);
-						if (tokens != null){
-							score += Math.min(1000, 100*tokens.quantity());
+						int tokens = CoopQuestsImp.partyTokens(hero); // COOP-HOOK: tokens of the whole party
+						if (tokens > 0){
+							score += Math.min(1000, 100*tokens);
 						}
 					}
 
@@ -221,7 +222,7 @@ public class EscapeCrystal extends Item {
 													@Override
 													protected void onSelect(int index) {
 														if (index == 0){
-															leaveVault(finalItem, finalScore);
+															leaveVault(hero, finalItem, finalScore); // COOP-HOOK
 														}
 														super.onSelect(index);
 													}
@@ -231,7 +232,7 @@ public class EscapeCrystal extends Item {
 										}
 									});
 								} else {
-									leaveVault(null, finalScore);
+									leaveVault(hero, null, finalScore); // COOP-HOOK
 								}
 							}
 						}
@@ -254,11 +255,12 @@ public class EscapeCrystal extends Item {
 
 	}
 
-	private void leaveVault( Item preserve, int score ){
+	//COOP-HOOK: takes the crystal's user (was Dungeon.hero everywhere)
+	private void leaveVault( Hero hero, Item preserve, int score ){
 		Sample.INSTANCE.play(Assets.Sounds.TELEPORT);
 
-		Dungeon.hero.live(); //clears all non-persist buffs, resets hunger/regen
-		Dungeon.hero.HP = Dungeon.hero.HT; //full heal
+		hero.live(); //clears all non-persist buffs, resets hunger/regen
+		hero.HP = hero.HT; //full heal
 
 		//logic for removing Warrior's Seal or Mage's staff
 		if (preserve instanceof Armor && ((Armor) preserve).checkSeal() != null){
@@ -276,14 +278,21 @@ public class EscapeCrystal extends Item {
 			preserve = w;
 		}
 
-		restoreHeroBelongings(Dungeon.hero, preserve);
-		Dungeon.hero.updateHT(false);
-		detachAll(Dungeon.hero.belongings.backpack);
+		// COOP-HOOK: one copy of the reward for every other alive hero, taken before it is collected
+		ArrayList<Item> coopCopies = new ArrayList<>();
+		if (preserve != null){
+			for (int i = CoopQuestsImp.copiesNeeded(hero); i > 0; i--) coopCopies.add(preserve.duplicate());
+		}
+
+		restoreHeroBelongings(hero, preserve);
+		hero.updateHT(false);
+		detachAll(hero.belongings.backpack);
+		CoopQuestsImp.onLeaveVault(hero, coopCopies); // COOP-HOOK: everyone else gets their belongings and reward
 		if (!Imp.Quest.isOld()) Imp.Quest.complete(score);
 
 		Level.beforeTransition();
 		InterlevelScene.curTransition = new LevelTransition(Dungeon.level,
-				Dungeon.hero.pos,
+				hero.pos, // COOP-HOOK: was Dungeon.hero.pos
 				LevelTransition.Type.BRANCH_ENTRANCE,
 				Dungeon.depth,
 				0,
@@ -298,26 +307,49 @@ public class EscapeCrystal extends Item {
 	public static String ENERGY     = "energy";
 
 	public void storeHeroBelongings( Hero hero ){
-		storedItems = new Bundle();
-
-		Bundle belongings = new Bundle();
-		hero.belongings.storeInBundle(belongings);
-		storedItems.put(BELONGINGS, belongings);
-
-		Bundle quickslots = new Bundle();
-		Dungeon.quickslot.storePlaceholders(quickslots);
-		storedItems.put(QUICKSLOTS, quickslots);
-
-		storedItems.put(GOLD, Dungeon.gold);
-		storedItems.put(ENERGY, Dungeon.energy);
-
-		Dungeon.quickslot.reset();
-		updateQuickslot();
-		Dungeon.gold = Dungeon.energy = 0;
-		hero.belongings.clear();
+		storeHeroBelongings( hero, true );
 	}
 
+	//COOP-HOOK: withGold is false for the other heroes of a coop party (gold/energy are shared and
+	//only stored once). Runs against hero's own quickslot.
+	public void storeHeroBelongings( Hero hero, boolean withGold ){
+		CoopQuestsImp.withQuickslot(hero, new Runnable() {
+			@Override
+			public void run() {
+				storedItems = new Bundle();
+
+				Bundle belongings = new Bundle();
+				hero.belongings.storeInBundle(belongings);
+				storedItems.put(BELONGINGS, belongings);
+
+				Bundle quickslots = new Bundle();
+				Dungeon.quickslot.storePlaceholders(quickslots);
+				storedItems.put(QUICKSLOTS, quickslots);
+
+				if (withGold) {
+					storedItems.put(GOLD, Dungeon.gold);
+					storedItems.put(ENERGY, Dungeon.energy);
+				}
+
+				Dungeon.quickslot.reset();
+				updateQuickslot();
+				if (withGold) Dungeon.gold = Dungeon.energy = 0;
+				hero.belongings.clear();
+			}
+		});
+	}
+
+	//COOP-HOOK: runs against hero's own quickslot and belongings (was partly Dungeon.hero)
 	public void restoreHeroBelongings( Hero hero, Item preserve ){
+		CoopQuestsImp.withQuickslot(hero, new Runnable() {
+			@Override
+			public void run() {
+				restoreHeroBelongingsInternal( hero, preserve );
+			}
+		});
+	}
+
+	private void restoreHeroBelongingsInternal( Hero hero, Item preserve ){
 		//we detach the item being preserved first, to cancel any equip-based buffs (e.g. wand charging)
 		if (preserve != null) {
 			preserve.detachAll(hero.belongings.backpack);
@@ -329,13 +361,15 @@ public class EscapeCrystal extends Item {
 		Dungeon.quickslot.restorePlaceholders(storedItems.getBundle(QUICKSLOTS));
 		updateQuickslot();
 
-		Dungeon.hero.belongings.restoreFromBundle(storedItems.getBundle(BELONGINGS));
+		hero.belongings.restoreFromBundle(storedItems.getBundle(BELONGINGS));
 
-		Dungeon.gold = storedItems.getInt(GOLD);
-		Dungeon.energy = storedItems.getInt(ENERGY);
+		if (storedItems.contains(GOLD)) {
+			Dungeon.gold = storedItems.getInt(GOLD);
+			Dungeon.energy = storedItems.getInt(ENERGY);
+		}
 
 		if (preserve != null){
-			if (!preserve.collect()) {
+			if (!preserve.collect(hero.belongings.backpack)) {
 				//if hero's inventory is full, the Imp drops the reward
 				Imp.Quest.reward = preserve;
 			}

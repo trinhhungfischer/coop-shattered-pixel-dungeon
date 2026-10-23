@@ -22,6 +22,7 @@
 package com.shatteredpixel.shatteredpixeldungeon.coop;
 
 import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
+import com.shatteredpixel.shatteredpixeldungeon.QuickSlot;
 import com.shatteredpixel.shatteredpixeldungeon.actors.Actor;
 import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.AscensionChallenge;
@@ -69,8 +70,9 @@ import java.util.List;
  */
 public class CoopCore {
 
-	//max distance (in tiles) from the stairs that every alive hero must be within to change floors
-	public static final int TRANSITION_RANGE = 2;
+	//max distance (in tiles) from the stairs that every alive hero must be within to change floors:
+	//1 means everyone stands on or right next to the stairs
+	public static final int TRANSITION_RANGE = 1;
 
 	// ---------------------------------------------------------------------------------
 	// New run
@@ -421,29 +423,64 @@ public class CoopCore {
 		}
 	}
 
-	//stairs rule: every alive hero must be within TRANSITION_RANGE of the transition area.
-	//Boss floors are the exception: one hero going in pulls the whole party along right away.
+	//stairs rule: every alive hero must stand next to the stairs (within TRANSITION_RANGE),
+	//on every floor including boss floors. Then the whole party travels together.
 	public static boolean canPartyTransition( Hero h, LevelTransition t ){
 		if (!Coop.active() || t == null) return true;
-		if (t.destBranch == 0 && Dungeon.bossLevel( t.destDepth )){
-			if (Coop.aliveHeroes().size() > 1) {
-				GLog.h( Messages.get(CoopCore.class, "party_pulled") );
-			}
-			return true;
-		}
 		Level level = Dungeon.level;
-		for (Hero o : Coop.aliveHeroes()){
+		List<Hero> party = Coop.aliveHeroes();
+
+		int range = transitionRange( level, t );
+
+		for (Hero o : party){
 			if (o == h) continue;
-			int x = o.pos % level.width();
-			int y = o.pos / level.width();
-			int dx = Math.max( 0, Math.max( t.left - x, x - t.right ) );
-			int dy = Math.max( 0, Math.max( t.top - y, y - t.bottom ) );
-			if (Math.max(dx, dy) > TRANSITION_RANGE){
+			if (distanceTo( level, t, o.pos ) > range){
 				GLog.w( Messages.get(CoopCore.class, "party_not_gathered") );
 				return false;
 			}
 		}
 		return true;
+	}
+
+	//how far from the stairs every hero has to be to change floors. Stairs in a corner or a narrow
+	//corridor may not have room for the whole party next to them: then heroes queued one tile
+	//further back count too, so the party can never get stuck.
+	public static int transitionRange( Level level, LevelTransition t ){
+		int range = TRANSITION_RANGE;
+		if (standableCellsNear( level, t, range ) < Coop.aliveHeroes().size()) range++;
+		return range;
+	}
+
+	//a hero right next to stairs that a teammate stands on can take them too (instead of swapping)
+	public static boolean nextToTeammateOnStairs( Hero h, LevelTransition t ){
+		if (!Coop.active() || t == null) return false;
+		Level level = Dungeon.level;
+		for (Hero o : Coop.aliveHeroes()){
+			if (o != h && t.inside(o.pos) && level.adjacent(h.pos, o.pos)) return true;
+		}
+		return false;
+	}
+
+	//distance in tiles from a cell to the transition area (0 = inside it)
+	private static int distanceTo( Level level, LevelTransition t, int cell ){
+		int x = cell % level.width();
+		int y = cell / level.width();
+		int dx = Math.max( 0, Math.max( t.left - x, x - t.right ) );
+		int dy = Math.max( 0, Math.max( t.top - y, y - t.bottom ) );
+		return Math.max( dx, dy );
+	}
+
+	//how many heroes can stand within range of the transition area
+	private static int standableCellsNear( Level level, LevelTransition t, int range ){
+		int count = 0;
+		for (int y = t.top - range; y <= t.bottom + range; y++){
+			for (int x = t.left - range; x <= t.right + range; x++){
+				if (x < 0 || y < 0 || x >= level.width() || y >= level.height()) continue;
+				int cell = x + y * level.width();
+				if (level.passable[cell] && !level.solid[cell]) count++;
+			}
+		}
+		return count;
 	}
 
 	//coop part of Level.beforeTransition(): same per-hero cleanup for the other heroes
@@ -531,6 +568,7 @@ public class CoopCore {
 			Actor.remove( b );
 		}
 		Actor.remove( h );
+		Actor.releaseIfCurrent( h );
 		fovs.remove( h );
 
 		Coop.markDead( h );
@@ -559,8 +597,10 @@ public class CoopCore {
 
 		ArrayList<Item> items = new ArrayList<>(h.belongings.backpack.items);
 		int i = 0;
+		QuickSlot slots = CoopQuickslots.of( h );
 		for (Item item : items){
 			h.belongings.backpack.items.remove( item );
+			if (slots != null) slots.clearItem( item );
 			int cell = cells.isEmpty() ? pos : cells.get( i++ % cells.size() );
 			Heap heap = level.drop( item, cell );
 			if (heap != null && heap.sprite != null) heap.sprite.drop( pos );

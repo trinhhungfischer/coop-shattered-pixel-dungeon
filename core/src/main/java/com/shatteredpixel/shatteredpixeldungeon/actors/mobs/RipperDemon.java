@@ -37,6 +37,7 @@ import com.shatteredpixel.shatteredpixeldungeon.scenes.GameScene;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.CharSprite;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.RipperSprite;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopMobs;
 import com.watabou.noosa.audio.Sample;
 import com.watabou.utils.Bundle;
 import com.watabou.utils.Callback;
@@ -261,11 +262,11 @@ public class RipperDemon extends Mob {
 						//don't want to overly punish players with slow move or attack speed
 						float delay = GameMath.gate(attackDelay(), (int)Math.ceil(enemy.cooldown()), 3*attackDelay());
 						spend(delay);
-						if (Dungeon.level.heroFOV[pos] || Dungeon.level.heroFOV[leapPos]){
+						if (CoopMobs.seen(pos) || CoopMobs.seen(leapPos)){ // COOP-HOOK: every hero that sees it
 							GLog.w(Messages.get(RipperDemon.this, "leap"));
 							GameScene.targetedCell(leapPos, delay);
 							((RipperSprite)sprite).leapPrep( leapPos );
-							Dungeon.hero.interrupt();
+							CoopMobs.interruptWatchers(pos, leapPos);
 						}
 						return true;
 					}

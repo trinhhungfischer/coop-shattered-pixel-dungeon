@@ -38,6 +38,7 @@ import com.shatteredpixel.shatteredpixeldungeon.items.armor.ClassArmor;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
 import com.shatteredpixel.shatteredpixeldungeon.ui.BuffIndicator;
 import com.shatteredpixel.shatteredpixeldungeon.ui.HeroIcon;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCombat;
 import com.watabou.noosa.Image;
 import com.watabou.noosa.audio.Sample;
 import com.watabou.utils.Bundle;
@@ -104,9 +105,10 @@ public class Endure extends ArmorAbility {
 				damageBonus += damage/2;
 
 				float damageMulti = 0.5f;
-				if (Dungeon.hero.hasTalent(Talent.SHRUG_IT_OFF)){
+				Hero hero = CoopCombat.heroOf(target); // COOP-HOOK: the enduring hero (was Dungeon.hero)
+				if (hero.hasTalent(Talent.SHRUG_IT_OFF)){
 					//total damage reduction is 60%/68%/74%/80%, based on points in talent
-					damageMulti *= Math.pow(0.8f, Dungeon.hero.pointsInTalent(Talent.SHRUG_IT_OFF));
+					damageMulti *= Math.pow(0.8f, hero.pointsInTalent(Talent.SHRUG_IT_OFF));
 				}
 
 				return damage*damageMulti;
@@ -120,7 +122,8 @@ public class Endure extends ArmorAbility {
 			}
 
 			enduring = false;
-			damageBonus *= 1f + 0.15f*Dungeon.hero.pointsInTalent(Talent.SUSTAINED_RETRIBUTION);
+			Hero hero = CoopCombat.heroOf(target); // COOP-HOOK: the enduring hero (was Dungeon.hero)
+			damageBonus *= 1f + 0.15f*hero.pointsInTalent(Talent.SUSTAINED_RETRIBUTION);
 
 			int nearby = 0;
 			for (Char ch : Actor.chars()){
@@ -128,9 +131,9 @@ public class Endure extends ArmorAbility {
 					nearby ++;
 				}
 			}
-			damageBonus *= 1f + (nearby*0.05f*Dungeon.hero.pointsInTalent(Talent.EVEN_THE_ODDS));
+			damageBonus *= 1f + (nearby*0.05f*hero.pointsInTalent(Talent.EVEN_THE_ODDS));
 
-			hitsLeft = 1+Dungeon.hero.pointsInTalent(Talent.SUSTAINED_RETRIBUTION);
+			hitsLeft = 1+hero.pointsInTalent(Talent.SUSTAINED_RETRIBUTION);
 			damageBonus /= hitsLeft;
 
 			if (damageBonus > 0) {

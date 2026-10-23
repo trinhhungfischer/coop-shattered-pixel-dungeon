@@ -27,6 +27,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.HeroDisguise;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.HeroClass;
 import com.shatteredpixel.shatteredpixeldungeon.coop.Coop;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopUI;
 import com.shatteredpixel.shatteredpixeldungeon.scenes.GameScene;
 import com.shatteredpixel.shatteredpixeldungeon.ui.CharHealthIndicator;
 import com.watabou.gltextures.SmartTexture;
@@ -122,7 +123,7 @@ public class HeroSprite extends CharSprite {
 	@Override
 	public void place( int p ) {
 		super.place( p );
-		if (Game.scene() instanceof GameScene && Coop.isLocal(hero())) Camera.main.panFollow(this, 5f); // COOP-HOOK
+		if (Game.scene() instanceof GameScene && CoopUI.hasCameraFocus(hero())) Camera.main.panFollow(this, 5f); // COOP-HOOK
 	}
 
 	@Override
@@ -131,7 +132,7 @@ public class HeroSprite extends CharSprite {
 		if (ch != null && ch.flying) {
 			play( fly );
 		}
-		if (Coop.isLocal(hero())) Camera.main.panFollow(this, 20f); // COOP-HOOK
+		if (CoopUI.hasCameraFocus(hero())) Camera.main.panFollow(this, 20f); // COOP-HOOK
 	}
 
 	@Override
@@ -146,7 +147,7 @@ public class HeroSprite extends CharSprite {
 	public void jump( int from, int to, float height, float duration,  Callback callback ) {
 		super.jump( from, to, height, duration, callback );
 		play( fly );
-		if (Coop.isLocal(hero())) Camera.main.panFollow(this, 20f); // COOP-HOOK
+		if (CoopUI.hasCameraFocus(hero())) Camera.main.panFollow(this, 20f); // COOP-HOOK
 	}
 
 	public synchronized void read() {

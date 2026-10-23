@@ -32,6 +32,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Buff;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.YogDzewa;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopBosses;
 import com.shatteredpixel.shatteredpixeldungeon.effects.CellEmitter;
 import com.shatteredpixel.shatteredpixeldungeon.effects.Pushing;
 import com.shatteredpixel.shatteredpixeldungeon.effects.particles.FlameParticle;
@@ -242,7 +243,7 @@ public class HallsBossLevel extends Level {
 	@Override
 	public void occupyCell( Char ch ) {
 		if (map[entrance()] == Terrain.ENTRANCE && map[exit()] != Terrain.EXIT
-				&& ch == Dungeon.hero && Dungeon.level.distance(ch.pos, entrance()) >= 2) {
+				&& CoopBosses.isHero(ch) && Dungeon.level.distance(ch.pos, entrance()) >= 2) { // COOP-HOOK: was ch == Dungeon.hero
 			seal();
 		}
 

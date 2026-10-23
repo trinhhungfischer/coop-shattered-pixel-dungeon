@@ -57,11 +57,12 @@ public class Regeneration extends Buff {
 				boolean chaliceCursed = false;
 				int chaliceLevel = -1;
 				if (target.buff(MagicImmune.class) == null) {
-					if (Dungeon.hero.buff(ChaliceOfBlood.chaliceRegen.class) != null) {
-						chaliceCursed = Dungeon.hero.buff(ChaliceOfBlood.chaliceRegen.class).isCursed();
-						chaliceLevel = Dungeon.hero.buff(ChaliceOfBlood.chaliceRegen.class).itemLevel();
-					} else if (Dungeon.hero.buff(SpiritForm.SpiritFormBuff.class) != null
-							&& Dungeon.hero.buff(SpiritForm.SpiritFormBuff.class).artifact() instanceof ChaliceOfBlood) {
+					// COOP-HOOK: the regenerating hero's own chalice (was Dungeon.hero)
+					if (target.buff(ChaliceOfBlood.chaliceRegen.class) != null) {
+						chaliceCursed = target.buff(ChaliceOfBlood.chaliceRegen.class).isCursed();
+						chaliceLevel = target.buff(ChaliceOfBlood.chaliceRegen.class).itemLevel();
+					} else if (target.buff(SpiritForm.SpiritFormBuff.class) != null
+							&& target.buff(SpiritForm.SpiritFormBuff.class).artifact() instanceof ChaliceOfBlood) {
 						chaliceLevel = SpiritForm.artifactLevel();
 					}
 				}

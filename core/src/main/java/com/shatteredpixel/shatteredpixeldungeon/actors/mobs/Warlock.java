@@ -37,6 +37,8 @@ import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.CharSprite;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.WarlockSprite;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopDeaths;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore;
 import com.watabou.noosa.audio.Sample;
 import com.watabou.utils.Random;
 
@@ -109,7 +111,7 @@ public class Warlock extends Mob {
 		Char enemy = this.enemy;
 		if (hit( this, enemy, true )) {
 			//TODO would be nice for this to work on ghost/statues too
-			if (enemy == Dungeon.hero && Random.Int( 2 ) == 0) {
+			if (CoopCore.isPartyHero(enemy) && Random.Int( 2 ) == 0) { // COOP-HOOK: any party hero
 				Buff.prolong( enemy, Degrade.class, Degrade.DURATION );
 				Sample.INSTANCE.play( Assets.Sounds.DEGRADE );
 			}
@@ -119,10 +121,10 @@ public class Warlock extends Mob {
 
 			enemy.damage( dmg, new DarkBolt() );
 			
-			if (enemy == Dungeon.hero && !enemy.isAlive()) {
+			if (CoopDeaths.heroDied(enemy)) { // COOP-HOOK: any party hero
 				Badges.validateDeathFromEnemyMagic();
-				Dungeon.fail( this );
-				GLog.n( Messages.get(this, "bolt_kill") );
+				CoopDeaths.fail(enemy, this); // COOP-HOOK
+				CoopDeaths.log(enemy, Messages.get(this, "bolt_kill")); // COOP-HOOK
 			}
 		} else {
 			enemy.sprite.showStatus( CharSprite.NEUTRAL,  enemy.defenseVerb() );

@@ -35,6 +35,9 @@ import com.shatteredpixel.shatteredpixeldungeon.journal.Notes;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.StatueSprite;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopDeaths;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCombat;
+import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.watabou.utils.Bundle;
 import com.watabou.utils.Random;
 
@@ -139,9 +142,9 @@ public class Statue extends Mob {
 	public int attackProc( Char enemy, int damage ) {
 		damage = super.attackProc( enemy, damage );
 		damage = weapon.proc( this, enemy, damage );
-		if (!enemy.isAlive() && enemy == Dungeon.hero){
-			Dungeon.fail(this);
-			GLog.n( Messages.capitalize(Messages.get(Char.class, "kill", name())) );
+		if (CoopDeaths.heroDied(enemy)){ // COOP-HOOK: any party hero
+			CoopDeaths.fail(enemy, this); // COOP-HOOK
+			CoopCombat.logHeroKilled((Hero)enemy, this); // COOP-HOOK: names the victim in coop
 		}
 		return damage;
 	}

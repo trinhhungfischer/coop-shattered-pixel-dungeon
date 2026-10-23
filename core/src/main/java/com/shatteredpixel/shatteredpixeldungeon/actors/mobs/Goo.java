@@ -31,6 +31,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Buff;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Invisibility;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.LockedFloor;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Ooze;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopBosses;
 import com.shatteredpixel.shatteredpixeldungeon.effects.FloatingText;
 import com.shatteredpixel.shatteredpixeldungeon.items.artifacts.DriedRose;
 import com.shatteredpixel.shatteredpixeldungeon.items.keys.WornKey;
@@ -70,7 +71,7 @@ public class Goo extends Mob {
 		int max = (HP*2 <= HT) ? 12 : 8;
 		if (pumpedUp > 0) {
 			pumpedUp = 0;
-			if (enemy == Dungeon.hero) {
+			if (CoopBosses.isHero(enemy)) { // COOP-HOOK: was enemy == Dungeon.hero
 				Statistics.qualifiedForBossChallengeBadge = false;
 				Statistics.bossScores[0] -= 100;
 			}
@@ -232,7 +233,7 @@ public class Goo extends Mob {
 		boolean result = super.attack( enemy, dmgMulti, dmgBonus, accMulti );
 		if (pumpedUp > 0) {
 			pumpedUp = 0;
-			if (enemy == Dungeon.hero) {
+			if (CoopBosses.isHero(enemy)) { // COOP-HOOK: was enemy == Dungeon.hero
 				Statistics.qualifiedForBossChallengeBadge = false;
 				Statistics.bossScores[0] -= 100;
 			}

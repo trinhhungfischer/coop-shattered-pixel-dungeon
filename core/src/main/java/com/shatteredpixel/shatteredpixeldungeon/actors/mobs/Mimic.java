@@ -40,6 +40,11 @@ import com.shatteredpixel.shatteredpixeldungeon.plants.Swiftthistle;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.CharSprite;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.MimicSprite;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCombat;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopVision;
+import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
+import com.shatteredpixel.shatteredpixeldungeon.coop.Coop;
 import com.watabou.noosa.audio.Sample;
 import com.watabou.utils.Bundle;
 import com.watabou.utils.Random;
@@ -153,21 +158,27 @@ public class Mimic extends Mob {
 
 	@Override
 	public boolean interact(Char c) {
-		if (alignment != Alignment.NEUTRAL || c != Dungeon.hero){
+		if (alignment != Alignment.NEUTRAL || !CoopCore.isPartyHero(c)){ // COOP-HOOK: any party hero
 			return super.interact(c);
 		}
+		Hero hero = (Hero) c; // COOP-HOOK: the hero opening the mimic (was Dungeon.hero)
 		stopHiding();
+		if (Coop.active()){ // COOP-HOOK: the opener is the first target
+			enemy = hero;
+			target = hero.pos;
+		}
 
-		Dungeon.hero.busy();
-		Dungeon.hero.sprite.operate(pos);
-		if (Dungeon.hero.invisible <= 0
-				&& Dungeon.hero.buff(Swiftthistle.TimeBubble.class) == null
-				&& Dungeon.hero.buff(TimekeepersHourglass.timeFreeze.class) == null){
-			return doAttack(Dungeon.hero);
+
+		hero.busy();
+		hero.sprite.operate(pos);
+		if (hero.invisible <= 0
+				&& hero.buff(Swiftthistle.TimeBubble.class) == null
+				&& hero.buff(TimekeepersHourglass.timeFreeze.class) == null){
+			return doAttack(hero);
 		} else {
 			sprite.idle();
 			alignment = Alignment.ENEMY;
-			Dungeon.hero.spendAndNext(1f);
+			hero.spendAndNext(1f);
 			return true;
 		}
 	}
@@ -177,7 +188,7 @@ public class Mimic extends Mob {
 		super.onAttackComplete();
 		if (alignment == Alignment.NEUTRAL){
 			alignment = Alignment.ENEMY;
-			Dungeon.hero.spendAndNext(1f);
+			CoopCombat.heroOf(enemy).spendAndNext(1f); // COOP-HOOK: the hero who opened us
 			enemySeen = true;
 		}
 	}
@@ -212,9 +223,9 @@ public class Mimic extends Mob {
 	public void stopHiding(){
 		state = HUNTING;
 		if (sprite != null) sprite.idle();
-		if (Actor.chars().contains(this) && Dungeon.level.heroFOV[pos]) {
-			enemy = Dungeon.hero;
-			target = Dungeon.hero.pos;
+		if (Actor.chars().contains(this) && CoopVision.seenByAnyHero(Dungeon.level, pos)) { // COOP-HOOK: seen by any hero
+			enemy = CoopCombat.focusHero(pos); // COOP-HOOK: closest hero (was Dungeon.hero)
+			target = enemy.pos;
 			GLog.w(Messages.get(this, "reveal") );
 			CellEmitter.get(pos).burst(Speck.factory(Speck.STAR), 10);
 			Sample.INSTANCE.play(Assets.Sounds.MIMIC);

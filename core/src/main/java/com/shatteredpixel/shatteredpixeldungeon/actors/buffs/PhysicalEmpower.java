@@ -25,6 +25,7 @@ import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Talent;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
 import com.shatteredpixel.shatteredpixeldungeon.ui.BuffIndicator;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCombat;
 import com.watabou.noosa.Image;
 import com.watabou.utils.Bundle;
 
@@ -46,7 +47,7 @@ public class PhysicalEmpower extends Buff {
 
 	@Override
 	public float iconFadePercent() {
-		float max = 1 + Dungeon.hero.pointsInTalent(Talent.STRENGTHENING_MEAL);
+		float max = 1 + CoopCombat.heroOf(target).pointsInTalent(Talent.STRENGTHENING_MEAL); // COOP-HOOK
 		return Math.max(0, (max-left) / max);
 	}
 

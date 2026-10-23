@@ -103,7 +103,7 @@ public class WarpBeacon extends ArmorAbility {
 						float chargeNeeded = chargeUse(hero);
 
 						if (tracker.depth != Dungeon.depth){
-							chargeNeeded *= 1.833f - 0.333f*Dungeon.hero.pointsInTalent(Talent.LONGRANGE_WARP);
+							chargeNeeded *= 1.833f - 0.333f*hero.pointsInTalent(Talent.LONGRANGE_WARP); // COOP-HOOK: was Dungeon.hero
 						}
 
 						if (armor.charge < chargeNeeded){

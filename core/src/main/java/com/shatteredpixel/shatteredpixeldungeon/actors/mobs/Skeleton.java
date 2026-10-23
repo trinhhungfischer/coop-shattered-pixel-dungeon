@@ -40,6 +40,10 @@ import com.shatteredpixel.shatteredpixeldungeon.plants.Earthroot;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.SkeletonSprite;
 import com.shatteredpixel.shatteredpixeldungeon.ui.TargetHealthIndicator;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopDeaths;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopAllies;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore;
+import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.watabou.noosa.audio.Sample;
 import com.watabou.utils.PathFinder;
 import com.watabou.utils.Random;
@@ -75,6 +79,7 @@ public class Skeleton extends Mob {
 		if (cause == Chasm.class) return;
 		
 		boolean heroKilled = false;
+		java.util.ArrayList<Char> killedHeroes = new java.util.ArrayList<>(); // COOP-HOOK
 		for (int i = 0; i < PathFinder.NEIGHBOURS8.length; i++) {
 			Char ch = findChar( pos + PathFinder.NEIGHBOURS8[i] );
 			if (ch != null && ch.isAlive()) {
@@ -101,31 +106,32 @@ public class Skeleton extends Mob {
 				if (ch.buff(MagicImmune.class) == null) {
 					ShieldOfLight.ShieldOfLightTracker shield = ch.buff(ShieldOfLight.ShieldOfLightTracker.class);
 					if (shield != null && shield.object == id()) {
-						int min = 1 + Dungeon.hero.pointsInTalent(Talent.SHIELD_OF_LIGHT);
+						int min = 1 + CoopAllies.summoner(ch).pointsInTalent(Talent.SHIELD_OF_LIGHT); // COOP-HOOK: the caster
 						damage -= Random.NormalIntRange(min, 2 * min);
 						damage -= Random.NormalIntRange(min, 2 * min); //apply twice
 						damage = Math.max(damage, 0);
-					} else if (ch == Dungeon.hero
-							&& Dungeon.hero.heroClass != HeroClass.CLERIC
-							&& Dungeon.hero.hasTalent(Talent.SHIELD_OF_LIGHT)
+					} else if (CoopCore.isPartyHero(ch) // COOP-HOOK: the hit hero's own talent
+							&& ((Hero)ch).heroClass != HeroClass.CLERIC
+							&& ((Hero)ch).hasTalent(Talent.SHIELD_OF_LIGHT)
 							&& TargetHealthIndicator.instance.target() == this) {
 						//33/50%
-						if (Random.Int(6) < 1 + Dungeon.hero.pointsInTalent(Talent.SHIELD_OF_LIGHT)) {
+						if (Random.Int(6) < 1 + ((Hero)ch).pointsInTalent(Talent.SHIELD_OF_LIGHT)) {
 							damage -= 2; //doubled
 						}
 					}
 
 					if (ch.buff(HolyWard.HolyArmBuff.class) != null){
 						//doubled
-						damage -= Dungeon.hero.subClass == HeroSubClass.PALADIN ? 6 : 2;
+						damage -= CoopAllies.summoner(ch).subClass == HeroSubClass.PALADIN ? 6 : 2; // COOP-HOOK: the caster
 					}
 				}
 
 				//apply DR twice (with 2 rolls for more consistency)
 				damage = Math.max( 0,  damage - (ch.drRoll() + ch.drRoll()) );
 				ch.damage( damage, this );
-				if (ch == Dungeon.hero && !ch.isAlive()) {
+				if (CoopDeaths.heroDied(ch)) { // COOP-HOOK: any party hero
 					heroKilled = true;
+					killedHeroes.add(ch);
 				}
 			}
 		}
@@ -135,8 +141,10 @@ public class Skeleton extends Mob {
 		}
 		
 		if (heroKilled) {
-			Dungeon.fail( this );
-			GLog.n( Messages.get(this, "explo_kill") );
+			for (Char h : killedHeroes) { // COOP-HOOK: every hero killed by the blast
+				CoopDeaths.fail( h, this );
+				CoopDeaths.log( h, Messages.get(this, "explo_kill") );
+			}
 		}
 	}
 

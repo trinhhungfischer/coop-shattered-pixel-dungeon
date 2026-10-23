@@ -40,6 +40,7 @@ import com.shatteredpixel.shatteredpixeldungeon.items.rings.RingOfEvasion;
 import com.shatteredpixel.shatteredpixeldungeon.levels.features.Chasm;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.CharSprite;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.PrismaticSprite;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopVision;
 import com.watabou.noosa.audio.Sample;
 import com.watabou.utils.Bundle;
 import com.watabou.utils.Random;
@@ -144,6 +145,7 @@ public class PrismaticImage extends NPC {
 	public void duplicate( Hero hero, int HP ) {
 		this.hero = hero;
 		heroID = this.hero.id();
+		CoopVision.setOwner(this, hero); // COOP-HOOK: owner record for coop summon helpers
 		this.HP = HP;
 		HT = PrismaticGuard.maxHP( hero );
 	}

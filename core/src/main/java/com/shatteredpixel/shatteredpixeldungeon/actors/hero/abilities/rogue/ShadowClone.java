@@ -43,6 +43,9 @@ import com.shatteredpixel.shatteredpixeldungeon.sprites.HeroSprite;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.MobSprite;
 import com.shatteredpixel.shatteredpixeldungeon.ui.HeroIcon;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopAllies;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopVision;
 import com.watabou.noosa.TextureFilm;
 import com.watabou.noosa.audio.Sample;
 import com.watabou.noosa.particles.Emitter;
@@ -58,7 +61,7 @@ public class ShadowClone extends ArmorAbility {
 
 	@Override
 	public String targetingPrompt() {
-		if (getShadowAlly() == null) {
+		if (getShadowAlly(Dungeon.hero) == null) { // COOP-HOOK: the active hero's own clone
 			return super.targetingPrompt();
 		} else {
 			return Messages.get(this, "prompt");
@@ -76,7 +79,7 @@ public class ShadowClone extends ArmorAbility {
 
 	@Override
 	public float chargeUse(Hero hero) {
-		if (getShadowAlly() == null) {
+		if (getShadowAlly(hero) == null) { // COOP-HOOK
 			return super.chargeUse(hero);
 		} else {
 			return 0;
@@ -85,7 +88,7 @@ public class ShadowClone extends ArmorAbility {
 
 	@Override
 	protected void activate(ClassArmor armor, Hero hero, Integer target) {
-		ShadowAlly ally = getShadowAlly();
+		ShadowAlly ally = getShadowAlly(hero); // COOP-HOOK
 
 		if (ally != null){
 			if (target == null){
@@ -108,6 +111,7 @@ public class ShadowClone extends ArmorAbility {
 
 				ally = new ShadowAlly(hero.lvl);
 				ally.pos = Random.element(spawnPoints);
+				CoopVision.setOwner(ally, hero); // COOP-HOOK: remember the summoner
 				GameScene.add(ally);
 
 				ShadowAlly.appear(ally, ally.pos);
@@ -132,9 +136,9 @@ public class ShadowClone extends ArmorAbility {
 		return new Talent[]{Talent.SHADOW_BLADE, Talent.CLONED_ARMOR, Talent.PERFECT_COPY, Talent.HEROIC_ENERGY};
 	}
 
-	private static ShadowAlly getShadowAlly(){
+	private static ShadowAlly getShadowAlly( Hero hero ){
 		for (Char ch : Actor.chars()){
-			if (ch instanceof ShadowAlly){
+			if (ch instanceof ShadowAlly && CoopAllies.ownedBy(ch, hero)){ // COOP-HOOK: one clone per rogue
 				return (ShadowAlly) ch;
 			}
 		}
@@ -205,9 +209,10 @@ public class ShadowClone extends ArmorAbility {
 		@Override
 		public int damageRoll() {
 			int damage = Random.NormalIntRange(10, 20);
-			int heroDamage = Dungeon.hero.damageRoll();
-			heroDamage /= Dungeon.hero.attackDelay(); //normalize hero damage based on atk speed
-			heroDamage = Math.round(0.08f * Dungeon.hero.pointsInTalent(Talent.SHADOW_BLADE) * heroDamage);
+			Hero owner = CoopAllies.summoner(this); // COOP-HOOK: the summoner (was Dungeon.hero)
+			int heroDamage = owner.damageRoll();
+			heroDamage /= owner.attackDelay(); //normalize hero damage based on atk speed
+			heroDamage = Math.round(0.08f * owner.pointsInTalent(Talent.SHADOW_BLADE) * heroDamage);
 			if (heroDamage > 0){
 				damage += heroDamage;
 			}
@@ -217,9 +222,10 @@ public class ShadowClone extends ArmorAbility {
 		@Override
 		public int attackProc( Char enemy, int damage ) {
 			damage = super.attackProc( enemy, damage );
-			if (Random.Int(4) < Dungeon.hero.pointsInTalent(Talent.SHADOW_BLADE)
-					&& Dungeon.hero.belongings.weapon() != null){
-				return Dungeon.hero.belongings.weapon().proc( this, enemy, damage );
+			Hero owner = CoopAllies.summoner(this); // COOP-HOOK
+			if (Random.Int(4) < owner.pointsInTalent(Talent.SHADOW_BLADE)
+					&& owner.belongings.weapon() != null){
+				return owner.belongings.weapon().proc( this, enemy, damage );
 			} else {
 				return damage;
 			}
@@ -228,8 +234,9 @@ public class ShadowClone extends ArmorAbility {
 		@Override
 		public int drRoll() {
 			int dr = super.drRoll();
-			int heroRoll = Dungeon.hero.drRoll();
-			heroRoll = Math.round(0.12f * Dungeon.hero.pointsInTalent(Talent.CLONED_ARMOR) * heroRoll);
+			Hero owner = CoopAllies.summoner(this); // COOP-HOOK
+			int heroRoll = owner.drRoll();
+			heroRoll = Math.round(0.12f * owner.pointsInTalent(Talent.CLONED_ARMOR) * heroRoll);
 			if (heroRoll > 0){
 				dr += heroRoll;
 			}
@@ -238,8 +245,9 @@ public class ShadowClone extends ArmorAbility {
 
 		@Override
 		public int glyphLevel(Class<? extends Armor.Glyph> cls) {
-			if (Dungeon.hero != null && Random.Int(4) < Dungeon.hero.pointsInTalent(Talent.CLONED_ARMOR)){
-				return Math.max(super.glyphLevel(cls), Dungeon.hero.glyphLevel(cls));
+			Hero owner = CoopAllies.summoner(this); // COOP-HOOK
+			if (owner != null && Random.Int(4) < owner.pointsInTalent(Talent.CLONED_ARMOR)){
+				return Math.max(super.glyphLevel(cls), owner.glyphLevel(cls));
 			} else {
 				return super.glyphLevel(cls);
 			}
@@ -248,9 +256,10 @@ public class ShadowClone extends ArmorAbility {
 		@Override
 		public int defenseProc(Char enemy, int damage) {
 			damage = super.defenseProc(enemy, damage);
-			if (Random.Int(4) < Dungeon.hero.pointsInTalent(Talent.CLONED_ARMOR)
-					&& Dungeon.hero.belongings.armor() != null){
-				return Dungeon.hero.belongings.armor().proc( enemy, this, damage );
+			Hero owner = CoopAllies.summoner(this); // COOP-HOOK
+			if (Random.Int(4) < owner.pointsInTalent(Talent.CLONED_ARMOR)
+					&& owner.belongings.armor() != null){
+				return owner.belongings.armor().proc( enemy, this, damage );
 			} else {
 				return damage;
 			}
@@ -263,7 +272,7 @@ public class ShadowClone extends ArmorAbility {
 			//moves 2 tiles at a time when returning to the hero
 			if (state == WANDERING
 					&& defendingPos == -1
-					&& Dungeon.level.distance(pos, Dungeon.hero.pos) > 1){
+					&& Dungeon.level.distance(pos, CoopAllies.leader(this).pos) > 1){ // COOP-HOOK
 				speed *= 2;
 			}
 
@@ -274,7 +283,7 @@ public class ShadowClone extends ArmorAbility {
 		public boolean canInteract(Char c) {
 			if (super.canInteract(c)){
 				return true;
-			} else if (Dungeon.level.distance(pos, c.pos) <= Dungeon.hero.pointsInTalent(Talent.PERFECT_COPY)) {
+			} else if (Dungeon.level.distance(pos, c.pos) <= CoopAllies.summoner(this).pointsInTalent(Talent.PERFECT_COPY)) { // COOP-HOOK
 				return true;
 			} else {
 				return false;
@@ -283,9 +292,10 @@ public class ShadowClone extends ArmorAbility {
 
 		@Override
 		public boolean interact(Char c) {
-			if (!Dungeon.hero.hasTalent(Talent.PERFECT_COPY)){
+			if (!CoopAllies.summoner(this).hasTalent(Talent.PERFECT_COPY)){ // COOP-HOOK
 				return super.interact(c);
 			}
+			Char hero = CoopCore.isPartyHero(c) ? c : Dungeon.hero; // COOP-HOOK: the interacting hero
 
 			//some checks from super.interact
 			if (!Dungeon.level.passable[pos] && !c.flying){
@@ -304,8 +314,8 @@ public class ShadowClone extends ArmorAbility {
 			if (PathFinder.distance[pos] == Integer.MAX_VALUE){
 				return true;
 			}
-			appear(this, Dungeon.hero.pos);
-			appear(Dungeon.hero, curPos);
+			appear(this, hero.pos); // COOP-HOOK
+			appear(hero, curPos);
 			Dungeon.observe();
 			GameScene.updateFog();
 			return true;

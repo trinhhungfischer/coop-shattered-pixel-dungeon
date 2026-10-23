@@ -41,6 +41,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Light;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.LockedFloor;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Ooze;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Roots;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopBosses;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Sleep;
 import com.shatteredpixel.shatteredpixeldungeon.effects.CellEmitter;
 import com.shatteredpixel.shatteredpixeldungeon.effects.FloatingText;
@@ -91,10 +92,10 @@ public abstract class YogFist extends Mob {
 	protected boolean act() {
 		if (paralysed <= 0 && rangedCooldown > 0) rangedCooldown--;
 
-		if (Dungeon.hero.invisible <= 0 && state == WANDERING){
-			beckon(Dungeon.hero.pos);
+		if (CoopBosses.seekHero(pos).invisible <= 0 && state == WANDERING){ // COOP-HOOK: was Dungeon.hero
+			beckon(CoopBosses.seekHero(pos).pos);
 			state = HUNTING;
-			enemy = Dungeon.hero;
+			enemy = CoopBosses.seekHero(pos);
 		}
 
 		return super.act();
@@ -527,7 +528,7 @@ public abstract class YogFist extends Mob {
 				enemy.damage( Random.NormalIntRange(10, 20), new LightBeam() );
 				Buff.prolong( enemy, Blindness.class, Blindness.DURATION/2f );
 
-				if (!enemy.isAlive() && enemy == Dungeon.hero) {
+				if (!enemy.isAlive() && CoopBosses.isHero(enemy)) { // COOP-HOOK: was enemy == Dungeon.hero
 					Badges.validateDeathFromEnemyMagic();
 					Dungeon.fail( this );
 					GLog.n( Messages.get(Char.class, "kill", name()) );
@@ -546,7 +547,7 @@ public abstract class YogFist extends Mob {
 			super.damage(dmg, src);
 			if (isAlive() && beforeHP > HT/2 && HP <= HT/2){
 				HP = HT/2;
-				Buff.prolong( Dungeon.hero, Blindness.class, Blindness.DURATION*1.5f );
+				CoopBosses.prolongOnParty( Blindness.class, Blindness.DURATION*1.5f ); // COOP-HOOK: was Dungeon.hero only
 				int i;
 				do {
 					i = Random.Int(Dungeon.level.length());
@@ -559,7 +560,7 @@ public abstract class YogFist extends Mob {
 				GameScene.flash(0x80FFFFFF);
 				GLog.w( Messages.get( this, "teleport" ));
 			} else if (!isAlive()){
-				Buff.prolong( Dungeon.hero, Blindness.class, Blindness.DURATION*3f );
+				CoopBosses.prolongOnParty( Blindness.class, Blindness.DURATION*3f ); // COOP-HOOK: was Dungeon.hero only
 				GameScene.flash(0x80FFFFFF);
 			}
 		}
@@ -597,7 +598,7 @@ public abstract class YogFist extends Mob {
 					l.weaken(50);
 				}
 
-				if (!enemy.isAlive() && enemy == Dungeon.hero) {
+				if (!enemy.isAlive() && CoopBosses.isHero(enemy)) { // COOP-HOOK: was enemy == Dungeon.hero
 					Badges.validateDeathFromEnemyMagic();
 					Dungeon.fail( this );
 					GLog.n( Messages.get(Char.class, "kill", name()) );
@@ -616,10 +617,7 @@ public abstract class YogFist extends Mob {
 			super.damage(dmg, src);
 			if (isAlive() && beforeHP > HT/2 && HP <= HT/2){
 				HP = HT/2;
-				Light l = Dungeon.hero.buff(Light.class);
-				if (l != null){
-					l.detach();
-				}
+				CoopBosses.detachFromParty(Light.class); // COOP-HOOK: was Dungeon.hero only
 				int i;
 				do {
 					i = Random.Int(Dungeon.level.length());
@@ -632,10 +630,7 @@ public abstract class YogFist extends Mob {
 				GameScene.flash(0, false);
 				GLog.w( Messages.get( this, "teleport" ));
 			} else if (!isAlive()){
-				Light l = Dungeon.hero.buff(Light.class);
-				if (l != null){
-					l.detach();
-				}
+				CoopBosses.detachFromParty(Light.class); // COOP-HOOK: was Dungeon.hero only
 				GameScene.flash(0, false);
 			}
 		}

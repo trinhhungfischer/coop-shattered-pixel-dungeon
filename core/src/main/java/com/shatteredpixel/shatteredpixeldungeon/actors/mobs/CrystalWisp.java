@@ -31,6 +31,7 @@ import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.CharSprite;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.CrystalWispSprite;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopDeaths;
 import com.watabou.utils.Bundle;
 import com.watabou.utils.Random;
 
@@ -132,10 +133,10 @@ public class CrystalWisp extends Mob{
 			int dmg = Random.NormalIntRange( 5, 10 );
 			enemy.damage( dmg, new LightBeam() );
 
-			if (!enemy.isAlive() && enemy == Dungeon.hero) {
+			if (CoopDeaths.heroDied(enemy)) { // COOP-HOOK: any party hero
 				Badges.validateDeathFromEnemyMagic();
-				Dungeon.fail( this );
-				GLog.n( Messages.get(this, "beam_kill") );
+				CoopDeaths.fail(enemy, this); // COOP-HOOK
+				CoopDeaths.log(enemy, Messages.get(this, "beam_kill")); // COOP-HOOK
 			}
 		} else {
 			enemy.sprite.showStatus( CharSprite.NEUTRAL,  enemy.defenseVerb() );

@@ -31,6 +31,7 @@ import com.shatteredpixel.shatteredpixeldungeon.levels.features.Chasm;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
 import com.shatteredpixel.shatteredpixeldungeon.ui.BuffIndicator;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopDeaths;
 import com.watabou.utils.Bundle;
 import com.watabou.utils.PointF;
 import com.watabou.utils.Random;
@@ -112,14 +113,14 @@ public class Bleeding extends Buff implements Buff.DOTbuff {
 							target.sprite.blood(), Math.min( 10 * dmg / target.HT, 10 ) );
 				}
 				
-				if (target == Dungeon.hero && !target.isAlive()) {
+				if (CoopDeaths.heroDied(target)) { // COOP-HOOK: any party hero
 					if (source == Chasm.class){
 						Badges.validateDeathFromFalling();
 					} else if (source == Sacrificial.class){
 						Badges.validateDeathFromFriendlyMagic();
 					}
-					Dungeon.fail( this );
-					GLog.n( Messages.get(this, "ondeath") );
+					CoopDeaths.fail( target, this ); // COOP-HOOK
+					CoopDeaths.log( target, Messages.get(this, "ondeath") ); // COOP-HOOK
 				}
 
 				if (source == Sickle.HarvestBleedTracker.class && !target.isAlive()){

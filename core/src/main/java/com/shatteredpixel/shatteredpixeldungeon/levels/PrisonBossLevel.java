@@ -34,6 +34,8 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.blobs.StormCloud;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Doom;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Tengu;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopBosses;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopVision;
 import com.shatteredpixel.shatteredpixeldungeon.effects.CellEmitter;
 import com.shatteredpixel.shatteredpixeldungeon.effects.Speck;
 import com.shatteredpixel.shatteredpixeldungeon.items.Heap;
@@ -335,7 +337,7 @@ public class PrisonBossLevel extends Level {
 			}
 		}
 		
-		for (HeavyBoomerang.CircleBack b : Dungeon.hero.buffs(HeavyBoomerang.CircleBack.class)){
+		for (HeavyBoomerang.CircleBack b : CoopBosses.partyBuffs(HeavyBoomerang.CircleBack.class)){ // COOP-HOOK: was Dungeon.hero.buffs
 			if (b.activeDepth() == Dungeon.depth
 					&& (safeArea == null || !safeArea.inside(cellToPoint(b.returnPos())))){
 				storedItems.add(b.cancel());
@@ -362,6 +364,7 @@ public class PrisonBossLevel extends Level {
 		
 		BArray.setFalse(visited);
 		BArray.setFalse(mapped);
+		CoopVision.clearExplored(this); // COOP-HOOK: teammates' explored maps of the rebuilt map
 		
 		for (Blob blob: blobs.values()){
 			blob.fullyClear();
@@ -445,7 +448,9 @@ public class PrisonBossLevel extends Level {
 				//moves intelligent allies with the hero, preferring closer pos to cell door
 				int doorPos = pointToCell(tenguCellDoor);
 				Mob.holdAllies(this, doorPos);
-				Mob.restoreAllies(this, Dungeon.hero.pos, doorPos);
+				//COOP-HOOK: pull the rest of the party into Tengu's cell, around the hero who walked in
+				CoopBosses.gatherParty(this, CoopBosses.anchor(), new Rect(tenguCell.left+1, tenguCell.top+1, tenguCell.right-1, tenguCell.bottom-1), false, tenguPos);
+				Mob.restoreAllies(this, CoopBosses.anchor().pos, doorPos); // COOP-HOOK: was Dungeon.hero.pos
 				
 				tengu.state = tengu.HUNTING;
 				tengu.pos = tenguPos;
@@ -488,12 +493,16 @@ public class PrisonBossLevel extends Level {
 
 			case FIGHT_PAUSE:
 				
-				Dungeon.hero.interrupt();
+				CoopBosses.interruptAll(); // COOP-HOOK: was Dungeon.hero.interrupt()
+				CoopBosses.holdAllies(this); // COOP-HOOK: teammates' allies are outside the safe area, keep them
 				
 				clearEntities( pauseSafeArea );
 				
 				setMapArena();
 				cleanMapState();
+				//COOP-HOOK: the old map is gone, the whole party arrives around the hero who walked in
+				CoopBosses.gatherParty(this, CoopBosses.anchor(), arena, true, (arena.left + arena.width()/2) + width()*(arena.top+2));
+				CoopBosses.restoreAllies(this, CoopBosses.anchor().pos); // COOP-HOOK
 				
 				tengu.state = tengu.HUNTING;
 				tengu.pos = (arena.left + arena.width()/2) + width()*(arena.top+2);
@@ -512,7 +521,7 @@ public class PrisonBossLevel extends Level {
 				
 				unseal();
 				
-				Dungeon.hero.interrupt();
+				CoopBosses.interruptAll(); // COOP-HOOK: was Dungeon.hero.interrupt()
 				Dungeon.hero.pos = tenguCell.left+4 + (tenguCell.top+2)*width();
 				Dungeon.hero.sprite.interruptMotion();
 				Dungeon.hero.sprite.place(Dungeon.hero.pos);
@@ -544,6 +553,8 @@ public class PrisonBossLevel extends Level {
 				
 				clearEntities(tenguCell);
 				cleanMapState();
+				//COOP-HOOK: the arena is gone, the rest of the party goes to Tengu's cell too
+				CoopBosses.gatherParty(this, Dungeon.hero, new Rect(tenguCell.left+1, tenguCell.top+1, tenguCell.right-1, tenguCell.bottom-1), true, tengu.pos);
 				
 				for (Item item : storedItems) {
 					if (!(item instanceof Tengu.BombAbility.BombItem)
@@ -575,7 +586,8 @@ public class PrisonBossLevel extends Level {
 	
 	@Override
 	public void occupyCell(Char ch) {
-		if (ch == Dungeon.hero){
+		if (CoopBosses.isHero(ch)){ // COOP-HOOK: was ch == Dungeon.hero, any party hero triggers the fight
+			CoopBosses.triggeredBy(ch); // COOP-HOOK
 			switch (state){
 				case START:
 					if (cellToPoint(ch.pos).y > tenguCell.top){
@@ -669,7 +681,8 @@ public class PrisonBossLevel extends Level {
 	public void placeTrapsInTenguCell(float fill){
 		
 		Point tenguPoint = cellToPoint(tengu.pos);
-		Point heroPoint = cellToPoint(Dungeon.hero.pos);
+		//COOP-HOOK: was Dungeon.hero.pos, coop uses a hero that is inside the cell
+		Point heroPoint = cellToPoint(CoopBosses.trapHero(this, new Rect(tenguCell.left+1, tenguCell.top+1, tenguCell.right-1, tenguCell.bottom-1), null, tengu.pos).pos);
 		
 		PathFinder.setMapSize(7, 7);
 		

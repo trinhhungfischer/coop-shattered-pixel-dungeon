@@ -23,6 +23,7 @@ package com.shatteredpixel.shatteredpixeldungeon.actors.buffs;
 
 import com.shatteredpixel.shatteredpixeldungeon.Challenges;
 import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopBosses;
 import com.shatteredpixel.shatteredpixeldungeon.ui.BuffIndicator;
 import com.watabou.utils.Bundle;
 
@@ -48,10 +49,12 @@ public class LockedFloor extends Buff {
 	public void addTime(float time){
 		left += time;
 		left = Math.min(left, 50); //cannot build to more than 50
+		CoopBosses.onLockAddTime(this, time); // COOP-HOOK: every hero's lock moves together
 	}
 
 	public void removeTime(float time){
 		left -= time; //can go negative!
+		CoopBosses.onLockRemoveTime(this, time); // COOP-HOOK: every hero's lock moves together
 	}
 
 	public boolean regenOn(){

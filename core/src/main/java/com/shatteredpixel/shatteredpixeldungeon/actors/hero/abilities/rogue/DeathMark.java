@@ -40,6 +40,7 @@ import com.shatteredpixel.shatteredpixeldungeon.sprites.CharSprite;
 import com.shatteredpixel.shatteredpixeldungeon.ui.BuffIndicator;
 import com.shatteredpixel.shatteredpixeldungeon.ui.HeroIcon;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopAllies;
 import com.watabou.noosa.Image;
 import com.watabou.noosa.audio.Sample;
 import com.watabou.utils.BArray;
@@ -89,7 +90,9 @@ public class DeathMark extends ArmorAbility {
 		}
 
 		if (ch != null){
-			Buff.affect(ch, DeathMarkTracker.class, DeathMarkTracker.DURATION).setInitialHP(ch.HP);
+			DeathMarkTracker mark = Buff.affect(ch, DeathMarkTracker.class, DeathMarkTracker.DURATION);
+			mark.setInitialHP(ch.HP);
+			mark.coopOwner = CoopAllies.ownerIndex(hero); // COOP-HOOK: remember the rogue
 		}
 
 		armor.charge -= chargeUse( hero );
@@ -111,21 +114,22 @@ public class DeathMark extends ArmorAbility {
 			return;
 		}
 
-		if (Dungeon.hero.hasTalent(Talent.FEAR_THE_REAPER)) {
-			if (Dungeon.hero.pointsInTalent(Talent.FEAR_THE_REAPER) >= 2) {
-				Buff.prolong(ch, Terror.class, 5f).object = Dungeon.hero.id();
+		Hero reaper = ch.buff(DeathMarkTracker.class).owner(); // COOP-HOOK: the rogue who marked ch (was Dungeon.hero)
+		if (reaper.hasTalent(Talent.FEAR_THE_REAPER)) {
+			if (reaper.pointsInTalent(Talent.FEAR_THE_REAPER) >= 2) {
+				Buff.prolong(ch, Terror.class, 5f).object = reaper.id();
 			}
 			Buff.prolong(ch, Cripple.class, 5f);
 
-			if (Dungeon.hero.pointsInTalent(Talent.FEAR_THE_REAPER) >= 3) {
+			if (reaper.pointsInTalent(Talent.FEAR_THE_REAPER) >= 3) {
 				boolean[] passable = BArray.not(Dungeon.level.solid, null);
 				PathFinder.buildDistanceMap(ch.pos, passable, 3);
 
 				for (Char near : Actor.chars()) {
 					if (near != ch && near.alignment == Char.Alignment.ENEMY
 							&& PathFinder.distance[near.pos] != Integer.MAX_VALUE) {
-						if (Dungeon.hero.pointsInTalent(Talent.FEAR_THE_REAPER) == 4) {
-							Buff.prolong(near, Terror.class, 5f).object = Dungeon.hero.id();
+						if (reaper.pointsInTalent(Talent.FEAR_THE_REAPER) == 4) {
+							Buff.prolong(near, Terror.class, 5f).object = reaper.id();
 						}
 						Buff.prolong(near, Cripple.class, 5f);
 					}
@@ -151,6 +155,11 @@ public class DeathMark extends ArmorAbility {
 		public static float DURATION = 5f;
 
 		int initialHP = 0;
+		int coopOwner = -1; // COOP-HOOK: party index of the rogue, -1 = solo/unknown
+
+		public Hero owner(){
+			return CoopAllies.ownerHero(coopOwner);
+		}
 
 		{
 			type = buffType.NEGATIVE;
@@ -198,10 +207,11 @@ public class DeathMark extends ArmorAbility {
 				Sample.INSTANCE.play(Assets.Sounds.HIT_STAB);
 				Sample.INSTANCE.play(Assets.Sounds.HIT_STRONG);
 				target.die(this);
-				int shld = Math.round(initialHP * (0.125f*Dungeon.hero.pointsInTalent(Talent.DEATHLY_DURABILITY)));
-				if (shld > 0 && target.alignment != Char.Alignment.ALLY){
-					Dungeon.hero.sprite.showStatusWithIcon(CharSprite.POSITIVE, Integer.toString(shld), FloatingText.SHIELDING);
-					Buff.affect(Dungeon.hero, Barrier.class).setShield(shld);
+				Hero rogue = owner(); // COOP-HOOK: was Dungeon.hero
+				int shld = Math.round(initialHP * (0.125f*rogue.pointsInTalent(Talent.DEATHLY_DURABILITY)));
+				if (shld > 0 && target.alignment != Char.Alignment.ALLY && (rogue.isAlive() || rogue == Dungeon.hero)){
+					rogue.sprite.showStatusWithIcon(CharSprite.POSITIVE, Integer.toString(shld), FloatingText.SHIELDING);
+					Buff.affect(rogue, Barrier.class).setShield(shld);
 				}
 			}
 		}
@@ -216,10 +226,11 @@ public class DeathMark extends ArmorAbility {
 				target.sprite.bloodBurstA(target.sprite.center(), target.HT*2);
 				Sample.INSTANCE.play(Assets.Sounds.HIT_STAB);
 				Sample.INSTANCE.play(Assets.Sounds.HIT_STRONG);
-				int shld = Math.round(initialHP * (0.125f*Dungeon.hero.pointsInTalent(Talent.DEATHLY_DURABILITY)));
-				if (shld > 0 && target.alignment != Char.Alignment.ALLY){
-					Dungeon.hero.sprite.showStatusWithIcon(CharSprite.POSITIVE, Integer.toString(shld), FloatingText.SHIELDING);
-					Buff.affect(Dungeon.hero, Barrier.class).setShield(shld);
+				Hero rogue = owner(); // COOP-HOOK: was Dungeon.hero
+				int shld = Math.round(initialHP * (0.125f*rogue.pointsInTalent(Talent.DEATHLY_DURABILITY)));
+				if (shld > 0 && target.alignment != Char.Alignment.ALLY && (rogue.isAlive() || rogue == Dungeon.hero)){
+					rogue.sprite.showStatusWithIcon(CharSprite.POSITIVE, Integer.toString(shld), FloatingText.SHIELDING);
+					Buff.affect(rogue, Barrier.class).setShield(shld);
 				}
 			}
 		}
@@ -230,12 +241,14 @@ public class DeathMark extends ArmorAbility {
 		public void storeInBundle(Bundle bundle) {
 			super.storeInBundle(bundle);
 			bundle.put(INITIAL_HP, initialHP);
+			CoopAllies.storeOwner(bundle, coopOwner); // COOP-HOOK
 		}
 
 		@Override
 		public void restoreFromBundle(Bundle bundle) {
 			super.restoreFromBundle(bundle);
 			initialHP = bundle.getInt(INITIAL_HP);
+			coopOwner = CoopAllies.restoreOwner(bundle); // COOP-HOOK
 		}
 	}
 

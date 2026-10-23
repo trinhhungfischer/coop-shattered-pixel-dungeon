@@ -26,6 +26,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.items.Item;
 import com.shatteredpixel.shatteredpixeldungeon.ui.BuffIndicator;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore;
 
 public class Degrade extends FlavourBuff {
 
@@ -40,7 +41,7 @@ public class Degrade extends FlavourBuff {
 	public boolean attachTo(Char target) {
 		if (super.attachTo(target)){
 			Item.updateQuickslot();
-			if (target == Dungeon.hero) ((Hero) target).updateHT(false);
+			if (CoopCore.isPartyHero(target)) ((Hero) target).updateHT(false); // COOP-HOOK
 			return true;
 		}
 		return false;
@@ -49,7 +50,7 @@ public class Degrade extends FlavourBuff {
 	@Override
 	public void detach() {
 		super.detach();
-		if (target == Dungeon.hero) ((Hero) target).updateHT(false);
+		if (CoopCore.isPartyHero(target)) ((Hero) target).updateHT(false); // COOP-HOOK
 		Item.updateQuickslot();
 	}
 

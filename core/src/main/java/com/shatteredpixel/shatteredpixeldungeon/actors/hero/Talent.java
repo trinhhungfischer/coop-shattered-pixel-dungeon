@@ -42,6 +42,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.RevealedArea;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Roots;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.ScrollEmpower;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.WandEmpower;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCombat;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.abilities.ArmorAbility;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.abilities.Ratmogrify;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.spells.DivineSense;
@@ -255,7 +256,7 @@ public enum Talent {
 	public static class RejuvenatingStepsCooldown extends FlavourBuff{
 		public int icon() { return BuffIndicator.TIME; }
 		public void tintIcon(Image icon) { icon.hardlight(0f, 0.35f, 0.15f); }
-		public float iconFadePercent() { return GameMath.gate(0, visualcooldown() / (15 - 5*Dungeon.hero.pointsInTalent(REJUVENATING_STEPS)), 1); }
+		public float iconFadePercent() { return GameMath.gate(0, visualcooldown() / (15 - 5*CoopCombat.heroOf(target).pointsInTalent(REJUVENATING_STEPS)), 1); } // COOP-HOOK
 	};
 	public static class RejuvenatingStepsFurrow extends CounterBuff{{revivePersists = true;}};
 	public static class SeerShotCooldown extends FlavourBuff{
@@ -512,7 +513,7 @@ public enum Talent {
 			if (hero.belongings.misc instanceof Ring && !ShardOfOblivion.passiveIDDisabled()) {
 				hero.belongings.misc.identify();
 			}
-			for (Item item : Dungeon.hero.belongings){
+			for (Item item : hero.belongings){ // COOP-HOOK: was Dungeon.hero
 				if (item instanceof Ring){
 					((Ring) item).setKnown();
 				}
@@ -536,10 +537,10 @@ public enum Talent {
 		}
 
 		if (talent == LIGHT_CLOAK && hero.heroClass == HeroClass.ROGUE){
-			for (Item item : Dungeon.hero.belongings.backpack){
+			for (Item item : hero.belongings.backpack){ // COOP-HOOK: was Dungeon.hero
 				if (item instanceof CloakOfShadows){
 					if (!hero.belongings.lostInventory() || item.keptThroughLostInventory()) {
-						((CloakOfShadows) item).activate(Dungeon.hero);
+						((CloakOfShadows) item).activate(hero);
 					}
 				}
 			}
@@ -556,20 +557,20 @@ public enum Talent {
 
 		if (talent == UNENCUMBERED_SPIRIT && hero.pointsInTalent(talent) == 3){
 			Item toGive = new ClothArmor().identify();
-			if (!toGive.collect()){
+			if (!toGive.collect(hero.belongings.backpack)){ // COOP-HOOK
 				Dungeon.level.drop(toGive, hero.pos).sprite.drop();
 			}
 			toGive = new Gloves().identify();
-			if (!toGive.collect()){
+			if (!toGive.collect(hero.belongings.backpack)){ // COOP-HOOK
 				Dungeon.level.drop(toGive, hero.pos).sprite.drop();
 			}
 		}
 
 		if (talent == LIGHT_READING && hero.heroClass == HeroClass.CLERIC){
-			for (Item item : Dungeon.hero.belongings.backpack){
+			for (Item item : hero.belongings.backpack){ // COOP-HOOK: was Dungeon.hero
 				if (item instanceof HolyTome){
 					if (!hero.belongings.lostInventory() || item.keptThroughLostInventory()) {
-						((HolyTome) item).activate(Dungeon.hero);
+						((HolyTome) item).activate(hero);
 					}
 				}
 			}
@@ -577,7 +578,7 @@ public enum Talent {
 
 		//if we happen to have spirit form applied with a ring of might
 		if (talent == SPIRIT_FORM){
-			Dungeon.hero.updateHT(false);
+			hero.updateHT(false); // COOP-HOOK: was Dungeon.hero
 		}
 	}
 
@@ -775,7 +776,7 @@ public enum Talent {
 			} else {
 				// 10/15%
 				if (Random.Int(20) < 1 + hero.pointsInTalent(RECALL_INSCRIPTION)){
-					Reflection.newInstance(cls).collect();
+					Reflection.newInstance(cls).collect(hero.belongings.backpack); // COOP-HOOK: the user's own backpack
 					GLog.p(Messages.get(Talent.class, RECALL_INSCRIPTION.name() + ".refunded"));
 				}
 			}
@@ -794,7 +795,7 @@ public enum Talent {
 				}
 				// 10/15%
 				if (Random.Int(20) < 1 + hero.pointsInTalent(RECALL_INSCRIPTION)){
-					Reflection.newInstance(cls).collect();
+					Reflection.newInstance(cls).collect(hero.belongings.backpack); // COOP-HOOK: the user's own backpack
 					GLog.p(Messages.get(Talent.class, RECALL_INSCRIPTION.name() + ".refunded"));
 				}
 			}
@@ -806,25 +807,25 @@ public enum Talent {
 			Buff.prolong(hero, EnhancedRings.class, 3f*hero.pointsInTalent(ENHANCED_RINGS));
 		}
 
-		if (Dungeon.hero.heroClass != HeroClass.CLERIC
-				&& Dungeon.hero.hasTalent(Talent.DIVINE_SENSE)){
-			Buff.prolong(Dungeon.hero, DivineSense.DivineSenseTracker.class, Dungeon.hero.cooldown()+1);
+		if (hero.heroClass != HeroClass.CLERIC // COOP-HOOK: the artifact user (was Dungeon.hero)
+				&& hero.hasTalent(Talent.DIVINE_SENSE)){
+			Buff.prolong(hero, DivineSense.DivineSenseTracker.class, hero.cooldown()+1);
 		}
 
 		// 10/20/30%
-		if (Dungeon.hero.heroClass != HeroClass.CLERIC
-				&& Dungeon.hero.hasTalent(Talent.CLEANSE)
-				&& Random.Int(10) < Dungeon.hero.pointsInTalent(Talent.CLEANSE)){
+		if (hero.heroClass != HeroClass.CLERIC // COOP-HOOK: the artifact user (was Dungeon.hero)
+				&& hero.hasTalent(Talent.CLEANSE)
+				&& Random.Int(10) < hero.pointsInTalent(Talent.CLEANSE)){
 			boolean removed = false;
-			for (Buff b : Dungeon.hero.buffs()) {
+			for (Buff b : hero.buffs()) {
 				if (b.type == Buff.buffType.NEGATIVE
 						&& !(b instanceof LostInventory)) {
 					b.detach();
 					removed = true;
 				}
 			}
-			if (removed && Dungeon.hero.sprite != null) {
-				new Flare( 6, 32 ).color(0xFF4CD2, true).show( Dungeon.hero.sprite, 2f );
+			if (removed && hero.sprite != null) {
+				new Flare( 6, 32 ).color(0xFF4CD2, true).show( hero.sprite, 2f );
 			}
 		}
 	}
