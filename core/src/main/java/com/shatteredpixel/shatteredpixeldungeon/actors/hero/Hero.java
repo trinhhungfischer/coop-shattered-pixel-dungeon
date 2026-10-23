@@ -79,6 +79,9 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Monk;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Snake;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.Imp;
+import com.shatteredpixel.shatteredpixeldungeon.coop.Coop;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopLoot;
 import com.shatteredpixel.shatteredpixeldungeon.effects.CellEmitter;
 import com.shatteredpixel.shatteredpixeldungeon.effects.FloatingText;
 import com.shatteredpixel.shatteredpixeldungeon.effects.Speck;
@@ -761,7 +764,7 @@ public class Hero extends Char {
 			return true;
 		}
 
-		KindOfWeapon wep = Dungeon.hero.belongings.attackingWeapon();
+		KindOfWeapon wep = belongings.attackingWeapon(); // COOP-HOOK: was Dungeon.hero.belongings
 
 		if (wep != null){
 			return wep.canReach(this, enemy.pos);
@@ -838,6 +841,7 @@ public class Hero extends Char {
 		
 		//calls to dungeon.observe will also update hero's local FOV.
 		fieldOfView = Dungeon.level.heroFOV;
+		CoopCore.onHeroAct( this ); // COOP-HOOK: active pointer follows the acting hero, own FOV array
 
 		if (buff(Endure.EndureTracker.class) != null){
 			buff(Endure.EndureTracker.class).endEnduring();
@@ -850,6 +854,7 @@ public class Hero extends Char {
 			} else {
 				//otherwise just directly re-calculate FOV
 				Dungeon.level.updateFieldOfView(this, fieldOfView);
+				CoopCore.afterRestFOV(this); // COOP-HOOK
 			}
 		}
 		
@@ -1117,6 +1122,12 @@ public class Hero extends Char {
 			
 			Heap heap = Dungeon.level.heaps.get( pos );
 			if (heap != null) {
+				if (CoopLoot.alreadyLooted( heap, this )) { // COOP-HOOK: this hero already took their share
+					GLog.i( Messages.get(CoopLoot.class, "already_looted") );
+					heap.sprite.drop();
+					ready();
+					return false;
+				}
 				Item item = heap.peek();
 				if (item.doPickUp( this )) {
 					heap.pickUp();
@@ -1437,7 +1448,9 @@ public class Hero extends Char {
 
 		} else if (!Dungeon.level.locked && transition != null && transition.inside(pos)) {
 
-			if (Dungeon.level.activateTransition(this, transition)){
+			if (!CoopCore.canPartyTransition(this, transition)){ // COOP-HOOK: whole party must be near the stairs
+				ready();
+			} else if (Dungeon.level.activateTransition(this, transition)){
 				curAction = null;
 			} else {
 				ready();
@@ -1510,7 +1523,7 @@ public class Hero extends Char {
 			}
 		}
 		if (hasTalent(Talent.PATIENT_STRIKE)){
-			Buff.affect(Dungeon.hero, Talent.PatientStrikeTracker.class).pos = Dungeon.hero.pos;
+			Buff.affect(this, Talent.PatientStrikeTracker.class).pos = pos; // COOP-HOOK: was Dungeon.hero
 		}
 		if (!fullRest) {
 			if (sprite != null) {
@@ -1943,7 +1956,11 @@ public class Hero extends Char {
 		if (Dungeon.level.map[cell] == Terrain.ALCHEMY && cell != pos) {
 			
 			curAction = new HeroAction.Alchemy( cell );
-			
+
+		} else if (Coop.isHero(ch) && ch != this && fieldOfView[cell]) { // COOP-HOOK: tap a teammate to swap places
+
+			curAction = new HeroAction.Interact( ch );
+
 		} else if (ch instanceof Mob && (fieldOfView[cell] || Char.hasProp(ch, Property.OBJECT))) {
 
 			if (((Mob) ch).heroShouldInteract()) {
@@ -2211,6 +2228,7 @@ public class Hero extends Char {
 				//it actually gets created. This is important so that the game knows to not
 				//delete the run or submit it to rankings, because a WndResurrect is about to exist
 				//this is needed because the actual creation of the window is delayed here
+				Coop.setActive( this ); // COOP-HOOK: WndResurrect / resurrect flow works on Dungeon.hero
 				WndResurrect.instance = new Object();
 				Ankh finalAnkh = ankh;
 				Game.runOnRenderThread(new Callback() {
@@ -2235,6 +2253,7 @@ public class Hero extends Char {
 		
 		Actor.fixTime();
 		super.die( cause );
+		if (CoopCore.spectate( this, cause )) return; // COOP-HOOK: other heroes alive -> spectator, no game over
 		reallyDie( cause );
 	}
 	

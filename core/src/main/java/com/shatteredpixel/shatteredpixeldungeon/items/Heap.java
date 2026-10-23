@@ -27,6 +27,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Wraith;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.Shopkeeper;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopLoot;
 import com.shatteredpixel.shatteredpixeldungeon.effects.CellEmitter;
 import com.shatteredpixel.shatteredpixeldungeon.effects.Speck;
 import com.shatteredpixel.shatteredpixeldungeon.effects.particles.ElmoParticle;
@@ -80,6 +81,8 @@ public class Heap implements Bundlable {
 	public boolean hidden = false; //sets alpha to 15%
 	
 	public LinkedList<Item> items = new LinkedList<>();
+
+	public CoopLoot.Record coopLoot = null; // COOP-HOOK: limited items and who looted them
 	
 	public void open( Hero hero ) {
 		switch (type) {
@@ -136,6 +139,11 @@ public class Heap implements Bundlable {
 			destroy();
 			return null;
 		}
+		Item coopPicked = CoopLoot.onPickUp( this ); // COOP-HOOK: limited item, copy stays for others
+		if (coopPicked != null) {
+			if (sprite != null) sprite.view(this).place( pos );
+			return coopPicked;
+		}
 		Item item = items.removeFirst();
 		if (items.isEmpty()) {
 			destroy();
@@ -156,7 +164,7 @@ public class Heap implements Bundlable {
 		if (item.stackable && type != Type.FOR_SALE) {
 			
 			for (Item i : items) {
-				if (i.isSimilar( item )) {
+				if (i.isSimilar( item ) && !CoopLoot.blocksMerge( this, i )) { // COOP-HOOK
 					item = i.merge( item );
 					break;
 				}
@@ -174,6 +182,8 @@ public class Heap implements Bundlable {
 		} else {
 			items.addFirst( item );
 		}
+
+		CoopLoot.onDrop( this, item ); // COOP-HOOK: tags limited items placed at level generation
 		
 		if (sprite != null) {
 			sprite.view(this).place( pos );
@@ -223,6 +233,7 @@ public class Heap implements Bundlable {
 		boolean evaporated = false;
 		
 		for (Item item : items.toArray( new Item[0] )) {
+			if (CoopLoot.protects( this, item )) continue; // COOP-HOOK
 			if (item instanceof Scroll && !item.unique) {
 				items.remove( item );
 				burnt = true;
@@ -283,6 +294,8 @@ public class Heap implements Bundlable {
 
 			for (Item item : items.toArray( new Item[0] )) {
 
+				if (CoopLoot.protects( this, item )) continue; // COOP-HOOK
+
 				//unique items and equipment aren't affect by explosions
 				if (item.unique || item.isUpgradable() || item instanceof EquipableItem){
 					continue;
@@ -326,6 +339,7 @@ public class Heap implements Bundlable {
 		
 		boolean frozen = false;
 		for (Item item : items.toArray( new Item[0] )) {
+			if (CoopLoot.protects( this, item )) continue; // COOP-HOOK
 			if (item instanceof MysteryMeat) {
 				replace( item, FrozenCarpaccio.cook( (MysteryMeat)item ) );
 				frozen = true;
@@ -434,6 +448,7 @@ public class Heap implements Bundlable {
 		type = Type.valueOf( bundle.getString( TYPE ) );
 		
 		items = new LinkedList<>((Collection<Item>) ((Collection<?>) bundle.getCollection(ITEMS)));
+		CoopLoot.restore( this, bundle, items ); // COOP-HOOK: before items get removed below
 		items.removeAll(Collections.singleton(null));
 		
 		//remove any document pages that either don't exist anymore or that the player already has
@@ -462,6 +477,7 @@ public class Heap implements Bundlable {
 		bundle.put( HAUNTED, haunted );
 		bundle.put( AUTO_EXPLORED, autoExplored );
 		bundle.put( HIDDEN, hidden );
+		CoopLoot.store( this, bundle ); // COOP-HOOK
 	}
 	
 }

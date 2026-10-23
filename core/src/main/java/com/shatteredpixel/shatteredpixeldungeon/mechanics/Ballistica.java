@@ -24,6 +24,7 @@ package com.shatteredpixel.shatteredpixeldungeon.mechanics;
 import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
 import com.shatteredpixel.shatteredpixeldungeon.ShatteredPixelDungeon;
 import com.shatteredpixel.shatteredpixeldungeon.actors.Actor;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCombat;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -111,6 +112,9 @@ public class Ballistica {
 
 		int cell = from;
 
+		//COOP-HOOK: projectiles fired by a party hero pass through other party heroes
+		boolean heroShooter = stopChars && CoopCombat.shooterIsHero(from);
+
 		int err = dA / 2;
 		while (Dungeon.level.insideMap(cell)) {
 
@@ -134,7 +138,8 @@ public class Ballistica {
 					collide(cell);
 				}
 			}
-			if (collisionPos == null && cell != sourcePos && stopChars && Actor.findChar( cell ) != null) {
+			if (collisionPos == null && cell != sourcePos && stopChars && Actor.findChar( cell ) != null
+					&& !(heroShooter && CoopCombat.passesThrough(from, cell, to))) { // COOP-HOOK
 				collide(cell);
 			}
 			if (collisionPos == null && cell == to && stopTarget){

@@ -23,6 +23,7 @@ package com.shatteredpixel.shatteredpixeldungeon.windows;
 
 import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.Ghost;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopQuests;
 import com.shatteredpixel.shatteredpixeldungeon.items.Item;
 import com.shatteredpixel.shatteredpixeldungeon.items.armor.Armor;
 import com.shatteredpixel.shatteredpixeldungeon.items.weapon.Weapon;
@@ -110,6 +111,8 @@ public class WndSadGhost extends Window {
 		
 		if (reward == null) return;
 
+		Item coopCopy = CoopQuests.copyReward( reward ); // COOP-HOOK: taken before enchant/identify
+
 		if (reward instanceof Weapon && Ghost.Quest.enchant != null){
 			((Weapon) reward).enchant(Ghost.Quest.enchant);
 		} else if (reward instanceof Armor && Ghost.Quest.glyph != null){
@@ -121,6 +124,14 @@ public class WndSadGhost extends Window {
 			GLog.i( Messages.capitalize(Messages.get(Dungeon.hero, "you_now_have", reward.name())) );
 		} else {
 			Dungeon.level.drop( reward, ghost.pos ).sprite.drop();
+		}
+
+		//COOP-HOOK: the ghost stays with a fresh copy until every alive hero picked a reward
+		if (coopCopy != null && CoopQuests.claimAndStay( CoopQuests.GHOST, Dungeon.hero )) {
+			if (reward == Ghost.Quest.weapon) Ghost.Quest.weapon = (Weapon) coopCopy;
+			else if (reward == Ghost.Quest.armor) Ghost.Quest.armor = (Armor) coopCopy;
+			ghost.yell( Messages.get(this, "farewell") );
+			return;
 		}
 		
 		ghost.yell( Messages.get(this, "farewell") );

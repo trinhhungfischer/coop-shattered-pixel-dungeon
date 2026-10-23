@@ -62,6 +62,8 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Piranha;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.YogFist;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.Blacksmith;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.Sheep;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopVision;
 import com.shatteredpixel.shatteredpixeldungeon.effects.CellEmitter;
 import com.shatteredpixel.shatteredpixeldungeon.effects.TargetedCell;
 import com.shatteredpixel.shatteredpixeldungeon.effects.particles.FlowParticle;
@@ -391,6 +393,7 @@ public abstract class Level implements Bundlable {
 
 		visited	= bundle.getBooleanArray( VISITED );
 		mapped	= bundle.getBooleanArray( MAPPED );
+		CoopVision.restore( this, bundle ); // COOP-HOOK: explored maps of the other heroes
 
 		transitions = new ArrayList<>();
 		for (Bundlable b : bundle.getCollection( TRANSITIONS )){
@@ -489,6 +492,7 @@ public abstract class Level implements Bundlable {
 		bundle.put( MAP, map );
 		bundle.put( VISITED, visited );
 		bundle.put( MAPPED, mapped );
+		CoopVision.store( this, bundle ); // COOP-HOOK: explored maps of the other heroes
 		bundle.put( TRANSITIONS, transitions );
 		bundle.put( LOCKED, locked );
 		bundle.put( HEAPS, heaps.valueList() );
@@ -632,6 +636,8 @@ public abstract class Level implements Bundlable {
 			GLog.w(Messages.get(Stasis.StasisBuff.class, "left_behind"));
 		}
 
+		CoopCore.beforeTransition(); // COOP-HOOK: same cleanup + spendToWhole for the other heroes
+
 		//spend the hero's partial turns,  so the hero cannot take partial turns between floors
 		Dungeon.hero.spendToWhole();
 		for (Actor a : Actor.all()){
@@ -646,12 +652,14 @@ public abstract class Level implements Bundlable {
 		if (!locked) {
 			locked = true;
 			Buff.affect(Dungeon.hero, LockedFloor.class);
+			CoopCore.onSeal(); // COOP-HOOK
 		}
 	}
 
 	public void unseal(){
 		if (locked) {
 			locked = false;
+			CoopCore.onUnseal(); // COOP-HOOK
 			if (Dungeon.hero.buff(LockedFloor.class) != null){
 				Dungeon.hero.buff(LockedFloor.class).detach();
 			}
@@ -768,7 +776,7 @@ public abstract class Level implements Bundlable {
 	}
 
 	public boolean spawnMob(int disLimit){
-		PathFinder.buildDistanceMap(Dungeon.hero.pos, BArray.or(passable, avoid, null));
+		CoopCore.buildPartyDistanceMap(BArray.or(passable, avoid, null)); // COOP-HOOK: distance to nearest hero (solo: Dungeon.hero.pos)
 
 		Mob mob = createMob();
 		if (mob.state != mob.PASSIVE) {
@@ -802,7 +810,7 @@ public abstract class Level implements Bundlable {
 
 			cell = Random.Int( length() );
 
-		} while ((Dungeon.level == this && heroFOV[cell])
+		} while ((Dungeon.level == this && CoopVision.seenByAnyHero(this, cell)) // COOP-HOOK: was heroFOV[cell]
 				|| !passable[cell]
 				|| (Char.hasProp(ch, Char.Property.LARGE) && !openSpace[cell])
 				|| Actor.findChar( cell ) != null);
@@ -1186,7 +1194,7 @@ public abstract class Level implements Bundlable {
 			}
 
 			if ( (map[ch.pos] == Terrain.GRASS || map[ch.pos] == Terrain.EMBERS)
-					&& ch == Dungeon.hero && Dungeon.hero.hasTalent(Talent.REJUVENATING_STEPS)
+					&& CoopCore.isPartyHero(ch) && ((Hero) ch).hasTalent(Talent.REJUVENATING_STEPS) //COOP-HOOK: was Dungeon.hero
 					&& ch.buff(Talent.RejuvenatingStepsCooldown.class) == null){
 
 				if (!Regeneration.regenOn()){
@@ -1195,14 +1203,15 @@ public abstract class Level implements Bundlable {
 					set(ch.pos, Terrain.FURROWED_GRASS);
 				} else {
 					set(ch.pos, Terrain.HIGH_GRASS);
-					Buff.count(ch, Talent.RejuvenatingStepsFurrow.class, 3 - Dungeon.hero.pointsInTalent(Talent.REJUVENATING_STEPS));
+					Buff.count(ch, Talent.RejuvenatingStepsFurrow.class, 3 - ((Hero) ch).pointsInTalent(Talent.REJUVENATING_STEPS)); //COOP-HOOK: was Dungeon.hero
 				}
 				GameScene.updateMap(ch.pos);
-				Buff.affect(ch, Talent.RejuvenatingStepsCooldown.class, 15f - 5f*Dungeon.hero.pointsInTalent(Talent.REJUVENATING_STEPS));
+				Buff.affect(ch, Talent.RejuvenatingStepsCooldown.class, 15f - 5f*((Hero) ch).pointsInTalent(Talent.REJUVENATING_STEPS)); //COOP-HOOK: was Dungeon.hero
 			}
 			
 			if (pit[ch.pos]){
-				if (ch == Dungeon.hero) {
+				if (CoopCore.isPartyHero(ch)) { // COOP-HOOK: was ch == Dungeon.hero
+					CoopCore.focus(ch); // COOP-HOOK: heroFall works on Dungeon.hero
 					Chasm.heroFall(ch.pos);
 				} else if (ch instanceof Mob) {
 					Chasm.mobFall( (Mob)ch );
@@ -1375,7 +1384,7 @@ public abstract class Level implements Bundlable {
 		
 		int sense = 1;
 		//Currently only the hero can get mind vision
-		if (c.isAlive() && c == Dungeon.hero) {
+		if (c.isAlive() && CoopCore.isPartyHero(c)) { // COOP-HOOK: was c == Dungeon.hero
 			for (Buff b : c.buffs( MindVision.class )) {
 				sense = Math.max( ((MindVision)b).distance, sense );
 			}
@@ -1408,8 +1417,9 @@ public abstract class Level implements Bundlable {
 			}
 		}
 
-		if (c instanceof SpiritHawk.HawkAlly && Dungeon.hero.pointsInTalent(Talent.EAGLE_EYE) >= 3){
-			int range = 1+(Dungeon.hero.pointsInTalent(Talent.EAGLE_EYE)-2);
+		Hero hawkOwner = CoopVision.ownerOf(c, Dungeon.hero); // COOP-HOOK: the summoner's talent
+		if (c instanceof SpiritHawk.HawkAlly && hawkOwner.pointsInTalent(Talent.EAGLE_EYE) >= 3){
+			int range = 1+(hawkOwner.pointsInTalent(Talent.EAGLE_EYE)-2);
 			for (Mob mob : mobs) {
 				int p = mob.pos;
 				if (!fieldOfView[p] && distance(c.pos, p) <= range) {
@@ -1421,7 +1431,7 @@ public abstract class Level implements Bundlable {
 		}
 
 		//Currently only the hero can get mind vision or awareness
-		if (c.isAlive() && c == Dungeon.hero) {
+		if (c.isAlive() && CoopCore.isPartyHero(c)) { // COOP-HOOK: was c == Dungeon.hero
 
 			if (heroMindFov == null || heroMindFov.length != length()){
 				heroMindFov = new boolean[length];
@@ -1429,7 +1439,7 @@ public abstract class Level implements Bundlable {
 				BArray.setFalse(heroMindFov);
 			}
 
-			Dungeon.hero.mindVisionEnemies.clear();
+			((Hero) c).mindVisionEnemies.clear(); // COOP-HOOK: was Dungeon.hero
 
 			int mindVisRange = 0;
 			if (c.buff(MindVision.class) != null) {
@@ -1492,10 +1502,11 @@ public abstract class Level implements Bundlable {
 			}
 
 			for (Mob m : mobs){
-				if (m instanceof WandOfWarding.Ward
+				if ((m instanceof WandOfWarding.Ward
 						|| m instanceof WandOfRegrowth.Lotus
 						|| m instanceof SpiritHawk.HawkAlly
-						|| m.buff(PowerOfMany.PowerBuff.class) != null){
+						|| m.buff(PowerOfMany.PowerBuff.class) != null)
+						&& CoopVision.sharesVision(m, c)){ // COOP-HOOK: only the summoner sees through it
 					if (m.fieldOfView == null || m.fieldOfView.length != length()){
 						m.fieldOfView = new boolean[length()];
 						Dungeon.level.updateFieldOfView( m, m.fieldOfView );
@@ -1512,7 +1523,7 @@ public abstract class Level implements Bundlable {
 			//set mind vision chars
 			for (Mob mob : mobs) {
 				if (heroMindFov[mob.pos] && !fieldOfView[mob.pos]){
-					Dungeon.hero.mindVisionEnemies.add(mob);
+					((Hero) c).mindVisionEnemies.add(mob); // COOP-HOOK: was Dungeon.hero
 				}
 			}
 
@@ -1520,7 +1531,7 @@ public abstract class Level implements Bundlable {
 
 		}
 
-		if (c == Dungeon.hero) {
+		if (CoopCore.isPartyHero(c)) { // COOP-HOOK: was c == Dungeon.hero
 			for (Heap heap : heaps.valueList())
 				if (!heap.seen && fieldOfView[heap.pos])
 					heap.seen = true;

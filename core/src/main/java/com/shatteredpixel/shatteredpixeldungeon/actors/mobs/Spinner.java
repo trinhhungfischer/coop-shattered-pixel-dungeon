@@ -30,6 +30,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Buff;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Dread;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Poison;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Terror;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCombat;
 import com.shatteredpixel.shatteredpixeldungeon.items.food.MysteryMeat;
 import com.shatteredpixel.shatteredpixeldungeon.mechanics.Ballistica;
 import com.shatteredpixel.shatteredpixeldungeon.scenes.GameScene;
@@ -107,7 +108,7 @@ public class Spinner extends Mob {
 				if (enemy != null && enemySeen) {
 					lastEnemyPos = enemy.pos;
 				} else {
-					lastEnemyPos = Dungeon.hero.pos;
+					lastEnemyPos = CoopCombat.focusHero(pos).pos; // COOP-HOOK: was Dungeon.hero.pos
 				}
 			}
 			shotWebVisually = false;

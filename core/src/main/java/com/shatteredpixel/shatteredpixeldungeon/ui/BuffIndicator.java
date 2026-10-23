@@ -409,6 +409,18 @@ public class BuffIndicator extends Component {
 		}
 	}
 
+	// COOP-HOOK: points the hero buff bar at a different hero (hotseat turn switch)
+	public synchronized void coopSetTarget( Char ch ){
+		if (this.ch == ch) return;
+		this.ch = ch;
+		for (BuffButton btn : buffButtons.values()){
+			btn.destroy();
+			remove(btn);
+		}
+		buffButtons.clear();
+		needsRefresh = true;
+	}
+
 	public static void refreshBoss(){
 		if (bossInstance != null) {
 			bossInstance.needsRefresh = true;

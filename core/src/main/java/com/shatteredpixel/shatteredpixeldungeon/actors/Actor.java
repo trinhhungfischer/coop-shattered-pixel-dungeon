@@ -26,6 +26,7 @@ import com.shatteredpixel.shatteredpixeldungeon.Statistics;
 import com.shatteredpixel.shatteredpixeldungeon.actors.blobs.Blob;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Buff;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore;
 import com.shatteredpixel.shatteredpixeldungeon.effects.TargetedCell;
 import com.watabou.noosa.Game;
 import com.watabou.utils.Bundlable;
@@ -200,6 +201,7 @@ public abstract class Actor implements Bundlable {
 	public static void init() {
 		
 		add( Dungeon.hero );
+		CoopCore.addPartyActors(); // COOP-HOOK: other alive heroes
 		
 		for (Mob mob : Dungeon.level.mobs) {
 			add( mob );
@@ -298,7 +300,7 @@ public abstract class Actor implements Bundlable {
 					current = null;
 				} else {
 					doNext = acting.act();
-					if (doNext && (Dungeon.hero == null || !Dungeon.hero.isAlive())) {
+					if (doNext && CoopCore.runStopped()) { // COOP-HOOK: solo is (hero == null || !hero.isAlive())
 						doNext = false;
 						current = null;
 					}

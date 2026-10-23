@@ -26,6 +26,7 @@ import com.shatteredpixel.shatteredpixeldungeon.Statistics;
 import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.AscensionChallenge;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Buff;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopQuests;
 import com.shatteredpixel.shatteredpixeldungeon.items.Generator;
 import com.shatteredpixel.shatteredpixeldungeon.items.Item;
 import com.shatteredpixel.shatteredpixeldungeon.items.armor.Armor;
@@ -69,7 +70,7 @@ public class Blacksmith extends NPC {
 			die(null);
 			Notes.remove( landmark() );
 			return true;
-		} else if (!Quest.rewardsAvailable() && Quest.completed()){
+		} else if (!Quest.rewardsAvailable() && Quest.completed() && !CoopQuests.blacksmithRewardsLeft()){ // COOP-HOOK
 			Notes.remove( landmark() );
 		}
 		return super.act();
@@ -83,6 +84,8 @@ public class Blacksmith extends NPC {
 		if (c != Dungeon.hero){
 			return true;
 		}
+
+		CoopQuests.syncBlacksmith( Dungeon.hero ); // COOP-HOOK: each hero has their own reward state
 		
 		if (!Quest.given) {
 
@@ -125,6 +128,7 @@ public class Blacksmith extends NPC {
 								Dungeon.level.drop( pick, Dungeon.hero.pos ).sprite.drop();
 							}
 							Quest.pickaxe = null;
+							CoopQuests.giveExtraPickaxes(); // COOP-HOOK
 
 							if (msg2Final != ""){
 								GameScene.show(new WndQuest(Blacksmith.this, msg2Final));
@@ -245,6 +249,8 @@ public class Blacksmith extends NPC {
 			smithRewards = null;
 			smithEnchant = null;
 			smithGlyph = null;
+
+			CoopQuests.reset( CoopQuests.BLACKSMITH ); // COOP-HOOK
 		}
 		
 		private static final String NODE	= "blacksmith";
@@ -298,6 +304,8 @@ public class Blacksmith extends NPC {
 						node.put(GLYPH, smithGlyph);
 					}
 				}
+
+				CoopQuests.storeBlacksmith( node ); // COOP-HOOK
 			}
 			
 			bundle.put( NODE, node );
@@ -338,6 +346,8 @@ public class Blacksmith extends NPC {
 				} else {
 					smithRewards = null;
 				}
+
+				CoopQuests.restoreBlacksmith( node ); // COOP-HOOK
 
 			} else {
 				reset();
@@ -467,6 +477,8 @@ public class Blacksmith extends NPC {
 			if (favor >= 2500){
 				freePickaxe = true;
 			}
+
+			CoopQuests.onBlacksmithComplete(); // COOP-HOOK: teammates' gold, per hero rewards
 		}
 
 		public static boolean rewardsAvailable(){
