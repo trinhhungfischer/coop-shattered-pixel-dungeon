@@ -374,6 +374,13 @@ public class CoopSim {
 		static int sharedCellChecks = 0;
 		static boolean alignWarned = false;
 		static int fightSplitChecks = 0;
+		static int pausedDepth = -1;
+		static int pausedReloads = -1;
+
+		//true when every clock was moved down together (Actor.fixTime on save), not a paused group acting
+		static boolean clocksShiftedDown( float before, float now ){
+			return false;
+		}
 		static final java.util.HashMap<Hero, Float> pausedClock = new java.util.HashMap<>();
 		static int pausedChecks = 0;
 		static int focusSwitches = 0;
@@ -480,7 +487,7 @@ public class CoopSim {
 					boolean boss = com.shatteredpixel.shatteredpixeldungeon.actors.Char.hasProp(m, com.shatteredpixel.shatteredpixeldungeon.actors.Char.Property.BOSS);
 					Hero first = null;
 					for (Hero x : alive){
-						boolean engaged = boss || m.isTargeting(x) || (x.fieldOfView != null && x.fieldOfView[m.pos]);
+						boolean engaged = boss || m.isTargeting(x) || (x.fieldOfView != null && m.pos < x.fieldOfView.length && x.fieldOfView[m.pos]);
 						if (!engaged) continue;
 						if (first == null) first = x;
 						else if (!com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.sameGroup(first, x)){ split = true; why = m.getClass().getSimpleName(); }
@@ -496,7 +503,13 @@ public class CoopSim {
 					Float before = pausedClock.get(x);
 					float now = com.shatteredpixel.shatteredpixeldungeon.actors.Actor.coopTime(x);
 					if (paused){
-						if (before != null && before != now){
+						if (pausedDepth != Dungeon.depth || pausedReloads != reloads){
+							pausedClock.clear();
+							pausedDepth = Dungeon.depth;
+							pausedReloads = reloads;
+							before = null;
+						}
+						if (before != null && now > before + 0.001f && !clocksShiftedDown(before, now)){
 							problem("P" + (Coop.indexOf(x)+1) + "'s group is paused but its clock moved " + before + " -> " + now + ". " + state());
 						}
 						pausedClock.put(x, now);
@@ -658,6 +671,13 @@ public class CoopSim {
 				if (level.distance(o.pos, exit.cell()) > com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore.transitionRange(level, exit)) partyGathered = false;
 			}
 
+			//close to the stairs and they are free: stand on them first, making room for the others
+			if (!partyGathered && !onExit
+					&& level.distance(h.pos, exit.cell()) <= com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore.transitionRange(level, exit)
+					&& com.shatteredpixel.shatteredpixeldungeon.actors.Actor.findChar(exit.cell()) == null){
+				doHandle( h, exit.cell() );
+				return;
+			}
 			if (!partyGathered && switchToSeparatedTeammate( h )) return;
 			if (onExit && !partyGathered){
 				//wait for the teammate at the stairs
@@ -690,6 +710,19 @@ public class CoopSim {
 					}
 				}
 				if (best != -1){
+					//teammates block paths: step towards the spot and swap with a teammate in the way
+					boolean[] pass = com.watabou.utils.BArray.or( level.passable, level.avoid, null );
+					PathFinder.buildDistanceMap( best, pass );
+					int step = -1;
+					for (int i : PathFinder.NEIGHBOURS8){
+						int c = h.pos + i;
+						if (PathFinder.distance[c] < PathFinder.distance[h.pos] && (step == -1 || PathFinder.distance[c] < PathFinder.distance[step])) step = c;
+					}
+					Object inWay = step == -1 ? null : com.shatteredpixel.shatteredpixeldungeon.actors.Actor.findChar(step);
+					if (inWay instanceof Hero && inWay != h){
+						doHandle( h, step );
+						return;
+					}
 					doHandle( h, best );
 					return;
 				}
@@ -752,6 +785,8 @@ public class CoopSim {
 			for (Hero o : Coop.aliveHeroes()){
 				if (o == h || com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.sameGroup(o, h)) continue;
 				if (exit != null && Dungeon.level.distance(h.pos, exit.cell()) > 2 && actions % 9 != 0) continue;
+				//a teammate already next to the stairs doesn't need the controls
+				if (exit != null && Dungeon.level.distance(o.pos, exit.cell()) <= com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore.transitionRange(Dungeon.level, exit)) continue;
 				if (com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.requestFocus( o )){
 					focusSwitches++;
 					return true;
@@ -845,6 +880,13 @@ public class CoopSim {
 				}
 			} catch (Exception e){
 				sb.append("dump failed ").append(e);
+			}
+			//where the game logic thread is stuck
+			for (java.util.Map.Entry<Thread, StackTraceElement[]> t : Thread.getAllStackTraces().entrySet()){
+				if (!t.getKey().getName().contains("Actor")) continue;
+				sb.append(" | actor thread ").append(t.getKey().getState()).append(":");
+				StackTraceElement[] st = t.getValue();
+				for (int i = 0; i < Math.min(18, st.length); i++) sb.append(" <- ").append(st[i]);
 			}
 			return sb.toString();
 		}

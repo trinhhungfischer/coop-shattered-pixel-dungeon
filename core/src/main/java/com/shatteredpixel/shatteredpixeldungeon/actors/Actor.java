@@ -304,6 +304,7 @@ public abstract class Actor implements Bundlable {
 				} else {
 					doNext = acting.act();
 					if (!doNext && CoopTime.afterHeroWaits( acting )) doNext = true; // COOP-HOOK: other groups play on
+					CoopTime.afterAct( acting ); // COOP-HOOK: no endless turns at one moment with split clocks
 					if (doNext && CoopCore.runStopped()) { // COOP-HOOK: solo is (hero == null || !hero.isAlive())
 						doNext = false;
 						current = null;

@@ -25,7 +25,6 @@ import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
 import com.shatteredpixel.shatteredpixeldungeon.actors.Actor;
 import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Buff;
-import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Hunger;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
 import com.shatteredpixel.shatteredpixeldungeon.levels.Level;
@@ -37,8 +36,8 @@ import java.util.List;
 /**
  * Turn groups in the style of Divinity: Original Sin 2 (see docs/coop-online-design.md, section 4).
  *
- * Heroes that affect each other (close together, drawn into the same fight, facing an awake
- * boss, or in a sealed boss arena) form one group and take turns in a shared order, like plain hotseat. Heroes that don't
+ * Heroes that affect each other (drawn into the same fight, facing an awake boss, or in a
+ * sealed boss arena) form one group. Outside of fights heroes are free even when side by side and take turns in a shared order, like plain hotseat. Heroes that don't
  * are in separate groups with their own clocks: a group whose hero waits for input is paused,
  * together with the mobs and buffs that belong to it, so the other groups can play on without
  * waiting for it. When groups join up again, the clock of the group that is behind is moved up.
@@ -61,9 +60,6 @@ public class CoopTime implements Coop.Listener {
 	public static void init(){
 		//registration happens in the static initializer
 	}
-
-	//heroes this close (in tiles) share a group
-	public static final int LINK_RANGE = 8;
 
 	//the hero the player controls in hotseat
 	private static volatile Hero focus = null;
@@ -165,11 +161,10 @@ public class CoopTime implements Coop.Listener {
 		return result;
 	}
 
+	//outside of fights heroes don't wait for each other, even side by side (like DOS2).
+	//Sealed boss arenas: everyone fights together.
 	private static boolean linked( Level level, Hero a, Hero b ){
-		if (level == null) return true;
-		//sealed boss arenas: everyone fights together
-		if (level.locked) return true;
-		return level.distance( a.pos, b.pos ) <= LINK_RANGE;
+		return level == null || level.locked;
 	}
 
 	//a hero is in the fight with a hunting enemy if the enemy is after them, they can see it,
@@ -290,7 +285,9 @@ public class CoopTime implements Coop.Listener {
 		}
 	}
 
-	//heroes of one new group that came from different old groups: move the late ones' clocks up
+	//heroes of one new group that came from different old groups: move the late ones' clocks up.
+	//Only the clocks move. The heroes' buffs (hunger, regeneration, wand and artifact chargers,
+	//durations) move with them, so nothing ticks for the skipped time: no hunger, no recharge.
 	private static void alignJoinedGroups( List<Hero> group, int[] before ){
 		if (group.size() < 2) return;
 		ArrayList<Integer> oldIds = new ArrayList<>();
@@ -316,11 +313,6 @@ public class CoopTime implements Coop.Listener {
 				if (owner != null && part.contains( owner )){
 					Actor.coopShift( a, lag );
 				}
-			}
-			//the time that passed for the others also passed for them
-			for (Hero h : part){
-				Hunger hunger = h.buff( Hunger.class );
-				if (hunger != null) hunger.affectHunger( -lag );
 			}
 		}
 	}
@@ -369,7 +361,34 @@ public class CoopTime implements Coop.Listener {
 		Hero old = focus;
 		if (h == old || sameGroup( old, h )) return false;
 		focus = h;
+		//the game is waiting for input, so nothing runs on the actor thread right now. Moving the
+		//pointer at once matters: some actors time themselves off Dungeon.hero (e.g. sentries
+		//wait for Dungeon.hero.cooldown(), which is 0 for a hero whose group is paused)
+		Coop.setActive( h );
 		if (old != null) Actor.releaseIfCurrent( old );
 		return true;
+	}
+
+	private static float spinNow = -1;
+	private static int spinCount = 0;
+
+	//Actor.process, after any act(). Upstream code sometimes schedules an actor relative to the
+	//active hero (Dungeon.hero.cooldown()). With split clocks that can be 0 forever, so actors could
+	//keep acting at one moment without time ever moving: after many acts at the same moment, the
+	//acting (non-hero) actor is moved on by one turn.
+	public static void afterAct( Actor actor ){
+		if (!enabled()) {
+			spinCount = 0;
+			return;
+		}
+		float now = Actor.now();
+		if (now != spinNow){
+			spinNow = now;
+			spinCount = 0;
+			return;
+		}
+		if (++spinCount >= 200 && !(actor instanceof Hero) && Actor.coopTime( actor ) <= now){
+			Actor.coopShift( actor, Actor.TICK );
+		}
 	}
 }

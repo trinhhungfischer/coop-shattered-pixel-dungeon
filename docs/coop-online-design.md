@@ -47,19 +47,20 @@ Việc này sửa sâu vào hàng trăm file gốc, đi ngược nguyên tắc "
 ## 4. Mô hình thời gian kiểu DOS2: "nhóm lượt" (time bubble)
 
 - Mỗi hero thuộc một **nhóm lượt**, và mỗi nhóm có **đồng hồ riêng** (`now` riêng).
+- **Ngoài combat các hero luôn tự do**, kể cả khi đứng cạnh nhau (như DOS2).
 - **Hai hero liên kết** (chung nhóm) khi có ít nhất một điều kiện:
-  1. ở gần nhau (≤ 8 ô, sẽ chỉnh khi chơi thử), **hoặc**
-  2. **cùng bị kéo vào một trận đánh**, giống combat của DOS2: một hero *tham gia* trận với một con quái đang săn khi con quái nhắm vào hero đó, hoặc hero nhìn thấy nó, hoặc hero vừa đánh trúng nó. Mọi hero tham gia cùng một con quái thì chung nhóm, dù đứng xa nhau, **hoặc**
-  3. có **boss còn sống và đã tỉnh** trên tầng: aggro của boss phủ cả tầng, nên cả đội đi theo lượt chung, **hoặc**
-  4. cùng trong một tầng boss đang khóa (arena).
+  1. **cùng bị kéo vào một trận đánh**, giống combat của DOS2: một hero *tham gia* trận với một con quái đang săn khi con quái nhắm vào hero đó, hoặc hero nhìn thấy nó, hoặc hero vừa đánh trúng nó. Mọi hero tham gia cùng một con quái thì chung nhóm, dù đứng xa nhau, **hoặc**
+  2. có **boss còn sống và đã tỉnh** trên tầng: aggro của boss phủ cả tầng, nên cả đội đi theo lượt chung, **hoặc**
+  3. cùng trong một tầng boss đang khóa (arena).
+  - Không dùng bán kính trận: ai **thấy** trận mới bị kéo vào, nên người ở phòng bên cạnh, cách tường, không bị khóa lượt mà không hiểu vì sao.
   - Liên kết có tính bắc cầu: A–B và B–C thì cả ba chung một nhóm.
   - Trong một nhóm, lượt đi đúng theo thứ tự thời gian như hotseat. Ai đang chờ lệnh thì đó là lượt của người đó.
 - **Quái và vật thể** thuộc nhóm của hero gần nhất hoặc hero nó đang săn. Quái ở chỗ không có hero nào thì đứng yên, cho tới khi một nhóm tới gần.
 - **Actor toàn tầng** (khí độc, lửa, bộ hồi sinh quái, timer) chạy theo **đồng hồ tầng** = đồng hồ của nhóm đang đi trước nhất, để không chạy nhanh gấp đôi.
 - **Lịch chạy:** host cho từng nhóm chạy **độc lập**. Nhóm nào có hero vừa nhận lệnh thì chạy tới khi hero đó cần lệnh tiếp. Nhóm đang chờ người chơi thì tạm dừng, không chặn nhóm khác.
-- **Gộp nhóm:** khi hai nhóm liên kết lại, nhóm có đồng hồ chậm hơn được **dời thời gian** cho bằng nhóm kia, giữ nguyên thứ tự lượt bên trong. Hunger và hồi máu được bù cho khoảng thời gian bị dời. Từ lúc đó cả nhóm đi theo lượt như hotseat.
+- **Gộp nhóm:** khi hai nhóm liên kết lại, nhóm có đồng hồ chậm hơn được **dời thời gian** cho bằng nhóm kia, giữ nguyên thứ tự lượt bên trong. **Chỉ đồng hồ thay đổi**: buff của hero (hunger, hồi máu, nạp charge của wand/artifact, thời hạn buff) được dời cùng, nên không có gì được tính cho khoảng thời gian bị bỏ qua. Từ lúc đó cả nhóm đi theo lượt như hotseat.
 - **Tách nhóm:** khi không còn điều kiện liên kết (đi xa, hết quái), mỗi hero lại có đồng hồ riêng.
-- Luật cầu thang giữ nguyên: cả nhóm phải đứng sát cầu thang. Lúc đó mọi người đã ở gần nhau, nên tự động chung một nhóm.
+- Luật cầu thang giữ nguyên: cả đội phải đứng sát cầu thang mới xuống được (không cần chung nhóm lượt).
 
 Phần này làm và kiểm thử **trong hotseat trước** (bot headless), rồi mới gắn mạng. Vì vậy lỗi về thời gian không bị lẫn với lỗi mạng.
 

@@ -418,6 +418,12 @@ public class CoopCore {
 	//call in switchLevel after Actor.init(): pushes mobs off cells occupied by other heroes
 	public static void displaceMobsFromParty( Level level ){
 		if (!Coop.active()) return;
+		//every hero sees the new level right away: a field of view left over from the previous
+		//level has the wrong size and would make turn groups read cells of the old map
+		for (Hero h : Coop.aliveHeroes()){
+			ensureOwnFOV( h );
+			level.updateFieldOfView( h, h.fieldOfView );
+		}
 		for (Hero h : Coop.aliveHeroes()){
 			if (h == Dungeon.hero) continue;
 			for (Mob m : level.mobs){
