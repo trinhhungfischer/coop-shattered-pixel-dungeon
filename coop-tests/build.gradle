@@ -27,3 +27,15 @@ tasks.register('simClasspath') {
     dependsOn sourceSets.main.runtimeClasspath, 'classes'
     doLast { println "CP=" + sourceSets.main.runtimeClasspath.asPath }
 }
+
+//network layer tests on the loopback address: ./gradlew coop-tests:netTest
+tasks.register('netTest', JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.shatteredpixel.shatteredpixeldungeon.cooptest.NetTest'
+}
+
+//the online lobby inside the headless game: ./gradlew coop-tests:lobbySim
+tasks.register('lobbySim', JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.shatteredpixel.shatteredpixeldungeon.cooptest.LobbySim'
+}

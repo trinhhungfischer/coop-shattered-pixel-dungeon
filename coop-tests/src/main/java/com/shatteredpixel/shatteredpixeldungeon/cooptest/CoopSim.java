@@ -68,7 +68,24 @@ public class CoopSim {
 	static int partySize = 2;
 
 	static final List<String> problems = new ArrayList<>();
+	//other headless scenarios (e.g. LobbySim) drive the game with their own per-frame logic
+	static Runnable customDriver = null;
 	static int errorsLogged = 0;
+
+	//starts the headless game; the caller sets customDriver first
+	static void launch() throws Exception {
+		File dir = java.nio.file.Files.createTempDirectory("spd-coopsim").toFile();
+		String base = dir.getAbsolutePath().replace('\\', '/') + "/";
+		Thread.setDefaultUncaughtExceptionHandler( (t, e) -> {
+			problem("uncaught exception on " + t.getName() + ": " + stack(e));
+			finish();
+		});
+		Game.version = "4.0.2-INDEV-coopsim";
+		Game.versionCode = 922;
+		HeadlessApplicationConfiguration cfg = new HeadlessApplicationConfiguration();
+		cfg.updatesPerSecond = 2000;
+		new HeadlessApplication( new SimGame(base), cfg );
+	}
 
 	public static void main( String[] args ) throws Exception {
 		if (args.length > 0) seed = Long.parseLong(args[0]);
@@ -160,7 +177,8 @@ public class CoopSim {
 		public void render() {
 			HeadlessStubs.newFrame();
 			try {
-				Driver.frame();
+				if (customDriver != null) customDriver.run();
+				else Driver.frame();
 			} catch (Throwable t){
 				problem("driver crashed: " + stack(t));
 				CoopSim.finish(); //not Game.finish(), which would quietly exit with code 0
