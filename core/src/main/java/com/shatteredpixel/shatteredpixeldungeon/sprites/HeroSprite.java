@@ -26,7 +26,9 @@ import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.HeroDisguise;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.HeroClass;
+import com.shatteredpixel.shatteredpixeldungeon.coop.Coop;
 import com.shatteredpixel.shatteredpixeldungeon.scenes.GameScene;
+import com.shatteredpixel.shatteredpixeldungeon.ui.CharHealthIndicator;
 import com.watabou.gltextures.SmartTexture;
 import com.watabou.gltextures.TextureCache;
 import com.watabou.noosa.Camera;
@@ -49,18 +51,34 @@ public class HeroSprite extends CharSprite {
 	private Animation fly;
 	private Animation read;
 
+	//COOP-HOOK: the hero this sprite belongs to, which is not always Dungeon.hero in coop
+	private Hero owner;
+
 	public HeroSprite() {
+		this( Dungeon.hero ); // COOP-HOOK
+	}
+
+	public HeroSprite( Hero hero ) { // COOP-HOOK
 		super();
-		
-		texture( Dungeon.hero.heroClass.spritesheet() );
+
+		owner = hero; // COOP-HOOK
+		texture( hero.heroClass.spritesheet() );
 		updateArmor();
-		
-		link( Dungeon.hero );
+
+		link( hero );
+		// COOP-HOOK: every party hero gets an overhead health bar in coop
+		if (Coop.active() && health == null) health = new CharHealthIndicator(ch);
 
 		if (ch.isAlive())
 			idle();
 		else
 			die();
+	}
+
+	// COOP-HOOK
+	private Hero hero(){
+		if (ch instanceof Hero) return (Hero) ch;
+		return owner != null ? owner : Dungeon.hero;
 	}
 
 	public void disguise(HeroClass cls){
@@ -70,7 +88,7 @@ public class HeroSprite extends CharSprite {
 	
 	public void updateArmor() {
 
-		TextureFilm film = new TextureFilm( tiers(), Dungeon.hero.tier(), FRAME_WIDTH, FRAME_HEIGHT );
+		TextureFilm film = new TextureFilm( tiers(), hero().tier(), FRAME_WIDTH, FRAME_HEIGHT ); // COOP-HOOK
 		
 		idle = new Animation( 1, true );
 		idle.frames( film, 0, 0, 0, 1, 0, 0, 1, 1 );
@@ -95,7 +113,7 @@ public class HeroSprite extends CharSprite {
 		read = new Animation( 20, false );
 		read.frames( film, 19, 20, 20, 20, 20, 20, 20, 20, 20, 19 );
 		
-		if (Dungeon.hero.isAlive())
+		if (hero().isAlive()) // COOP-HOOK
 			idle();
 		else
 			die();
@@ -104,7 +122,7 @@ public class HeroSprite extends CharSprite {
 	@Override
 	public void place( int p ) {
 		super.place( p );
-		if (Game.scene() instanceof GameScene) Camera.main.panFollow(this, 5f);
+		if (Game.scene() instanceof GameScene && Coop.isLocal(hero())) Camera.main.panFollow(this, 5f); // COOP-HOOK
 	}
 
 	@Override
@@ -113,7 +131,7 @@ public class HeroSprite extends CharSprite {
 		if (ch != null && ch.flying) {
 			play( fly );
 		}
-		Camera.main.panFollow(this, 20f);
+		if (Coop.isLocal(hero())) Camera.main.panFollow(this, 20f); // COOP-HOOK
 	}
 
 	@Override
@@ -128,7 +146,7 @@ public class HeroSprite extends CharSprite {
 	public void jump( int from, int to, float height, float duration,  Callback callback ) {
 		super.jump( from, to, height, duration, callback );
 		play( fly );
-		Camera.main.panFollow(this, 20f);
+		if (Coop.isLocal(hero())) Camera.main.panFollow(this, 20f); // COOP-HOOK
 	}
 
 	public synchronized void read() {

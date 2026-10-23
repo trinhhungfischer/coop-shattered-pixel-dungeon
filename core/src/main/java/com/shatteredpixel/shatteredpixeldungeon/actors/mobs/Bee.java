@@ -27,6 +27,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.AllyBuff;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Amok;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Buff;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCombat;
 import com.shatteredpixel.shatteredpixeldungeon.items.stones.StoneOfAggression;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.BeeSprite;
@@ -194,8 +195,9 @@ public class Bee extends Mob {
 				if (closest != null){
 					return closest;
 				} else {
-					if (alignment != Alignment.ALLY && Dungeon.level.distance(Dungeon.hero.pos, potPos) <= 3){
-						return Dungeon.hero;
+					Char potHero = CoopCombat.focusHero(potPos); // COOP-HOOK: closest hero to the pot (was Dungeon.hero)
+					if (alignment != Alignment.ALLY && Dungeon.level.distance(potHero.pos, potPos) <= 3){
+						return potHero;
 					} else {
 						return null;
 					}

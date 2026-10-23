@@ -392,6 +392,16 @@ public class StatusPane extends Component {
 		avatar.copy( HeroSprite.avatar( Dungeon.hero ) );
 	}
 
+	// COOP-HOOK: re-reads everything from Dungeon.hero after a hotseat turn switch
+	public void coopRefreshHero(){
+		buffs.coopSetTarget( Dungeon.hero );
+		lastLvl = -1; //no level-up particles for a switch
+		lastTier = Dungeon.hero.tier();
+		oldMax = -1;
+		warning = 0;
+		updateAvatar();
+	}
+
 	public void alpha( float value ){
 		value = GameMath.gate(0, value, 1f);
 		bg.alpha(value);

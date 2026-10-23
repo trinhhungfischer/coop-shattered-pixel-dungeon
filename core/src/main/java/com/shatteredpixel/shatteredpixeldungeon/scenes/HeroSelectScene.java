@@ -30,6 +30,9 @@ import com.shatteredpixel.shatteredpixeldungeon.Rankings;
 import com.shatteredpixel.shatteredpixeldungeon.SPDSettings;
 import com.shatteredpixel.shatteredpixeldungeon.ShatteredPixelDungeon;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.HeroClass;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopHeroSelect;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopSetup;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopUI;
 import com.shatteredpixel.shatteredpixeldungeon.journal.Journal;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
 import com.shatteredpixel.shatteredpixeldungeon.ui.ActionIndicator;
@@ -62,6 +65,7 @@ import com.watabou.noosa.PointerArea;
 import com.watabou.noosa.SkinnedBlock;
 import com.watabou.noosa.tweeners.Tweener;
 import com.watabou.noosa.ui.Component;
+import com.watabou.utils.Callback;
 import com.watabou.utils.DeviceCompat;
 import com.watabou.utils.GameMath;
 import com.watabou.utils.PlatformSupport;
@@ -102,6 +106,8 @@ public class HeroSelectScene extends PixelScene {
 		super.create();
 
 		Dungeon.hero = null;
+		CoopUI.init(); // COOP-HOOK
+		CoopSetup.clear(); // COOP-HOOK: only filled right before a run starts
 
 		Badges.loadGlobal();
 		Journal.loadGlobal();
@@ -154,13 +160,19 @@ public class HeroSelectScene extends PixelScene {
 
 				if (GamesInProgress.selectedClass == null) return;
 
-				Dungeon.hero = null;
-				Dungeon.daily = Dungeon.dailyReplay = false;
-				Dungeon.initSeed();
-				ActionIndicator.clearAction();
-				InterlevelScene.mode = InterlevelScene.Mode.DESCEND;
+				// COOP-HOOK: in hotseat coop, pick the other players' classes first
+				CoopHeroSelect.start(new Callback() {
+					@Override
+					public void call() {
+						Dungeon.hero = null;
+						Dungeon.daily = Dungeon.dailyReplay = false;
+						Dungeon.initSeed();
+						ActionIndicator.clearAction();
+						InterlevelScene.mode = InterlevelScene.Mode.DESCEND;
 
-				Game.switchScene( InterlevelScene.class );
+						Game.switchScene( InterlevelScene.class );
+					}
+				});
 			}
 		};
 		startBtn.icon(Icons.get(Icons.ENTER));
@@ -750,6 +762,7 @@ public class HeroSelectScene extends PixelScene {
 								}
 
 								Dungeon.hero = null;
+								CoopSetup.clear(); // COOP-HOOK: dailies are solo only
 								Dungeon.daily = true;
 								Dungeon.initSeed();
 								ActionIndicator.clearAction();
@@ -820,6 +833,23 @@ public class HeroSelectScene extends PixelScene {
 			challengeButton.icon(Icons.get(SPDSettings.challenges() > 0 ? Icons.CHALLENGE_COLOR : Icons.CHALLENGE_GREY));
 			add(challengeButton);
 			buttons.add(challengeButton);
+
+			// COOP-HOOK: hotseat player count toggle
+			StyledButton coopButton = new StyledButton(Chrome.Type.BLANK, CoopHeroSelect.toggleText(), 6){
+				@Override
+				protected void onClick() {
+					super.onClick();
+					CoopHeroSelect.cyclePlayers();
+					text(CoopHeroSelect.toggleText());
+					icon().brightness(CoopHeroSelect.players > 1 ? 1f : 0.6f);
+					GameOptions.this.layout();
+				}
+			};
+			coopButton.leftJustify = true;
+			coopButton.icon(new Image(HeroClass.WARRIOR.spritesheet(), 0, 90, 12, 15));
+			coopButton.icon().brightness(CoopHeroSelect.players > 1 ? 1f : 0.6f);
+			add(coopButton);
+			buttons.add(coopButton);
 
 			int unlockedCount = 0;
 			for (HeroClass cls : HeroClass.values()){

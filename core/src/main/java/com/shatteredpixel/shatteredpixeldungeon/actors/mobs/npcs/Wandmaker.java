@@ -29,6 +29,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Buff;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Elemental;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.RotHeart;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopQuests;
 import com.shatteredpixel.shatteredpixeldungeon.items.Generator;
 import com.shatteredpixel.shatteredpixeldungeon.items.Heap;
 import com.shatteredpixel.shatteredpixeldungeon.items.Item;
@@ -105,6 +106,11 @@ public class Wandmaker extends NPC {
 		sprite.turnTo( pos, Dungeon.hero.pos );
 
 		if (c != Dungeon.hero){
+			return true;
+		}
+
+		//teammates of a hero that already turned in the quest item
+		if (Quest.given && CoopQuests.wandmakerInteract( this, Quest.type )){ // COOP-HOOK
 			return true;
 		}
 
@@ -231,6 +237,7 @@ public class Wandmaker extends NPC {
 		public static void reset() {
 			spawned = false;
 			type = 0;
+			CoopQuests.reset( CoopQuests.WANDMAKER ); // COOP-HOOK
 
 			wand1 = null;
 			wand2 = null;
@@ -265,6 +272,8 @@ public class Wandmaker extends NPC {
 					node.put( RITUALPOS, CeremonialCandle.ritualPos );
 				}
 
+				CoopQuests.store( node, CoopQuests.WANDMAKER ); // COOP-HOOK
+
 			}
 			
 			bundle.put( NODE, node );
@@ -286,6 +295,8 @@ public class Wandmaker extends NPC {
 				if (type == 2){
 					CeremonialCandle.ritualPos = node.getInt( RITUALPOS );
 				}
+
+				CoopQuests.restore( node, CoopQuests.WANDMAKER ); // COOP-HOOK
 
 			} else {
 				reset();

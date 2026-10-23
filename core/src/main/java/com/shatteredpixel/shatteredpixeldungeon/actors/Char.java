@@ -96,6 +96,8 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Necromancer;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Tengu;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.MirrorImage;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.PrismaticImage;
+import com.shatteredpixel.shatteredpixeldungeon.coop.Coop;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCombat;
 import com.shatteredpixel.shatteredpixeldungeon.effects.FloatingText;
 import com.shatteredpixel.shatteredpixeldungeon.effects.Splash;
 import com.shatteredpixel.shatteredpixeldungeon.effects.particles.ShadowParticle;
@@ -235,7 +237,7 @@ public abstract class Char extends Actor {
 		} else if (c instanceof Hero
 				&& alignment == Alignment.ALLY
 				&& !hasProp(this, Property.IMMOVABLE)
-				&& Dungeon.level.distance(pos, c.pos) <= 2*Dungeon.hero.pointsInTalent(Talent.ALLY_WARP)){
+				&& Dungeon.level.distance(pos, c.pos) <= 2*CoopCombat.heroOf(c).pointsInTalent(Talent.ALLY_WARP)){ // COOP-HOOK: c's own talent
 			return true;
 		} else {
 			return false;
@@ -268,7 +270,7 @@ public abstract class Char extends Actor {
 		}
 
 		//warp instantly with allies in this case
-		if (c == Dungeon.hero && Dungeon.hero.hasTalent(Talent.ALLY_WARP)){
+		if (Coop.isHero(c) && ((Hero)c).hasTalent(Talent.ALLY_WARP)){ // COOP-HOOK: any party hero
 			PathFinder.buildDistanceMap(c.pos, BArray.or(Dungeon.level.passable, Dungeon.level.avoid, null));
 			if (PathFinder.distance[pos] == Integer.MAX_VALUE){
 				return true;
@@ -298,12 +300,13 @@ public abstract class Char extends Actor {
 		
 		c.spend( 1 / c.speed() );
 
-		if (c == Dungeon.hero){
-			if (Dungeon.hero.subClass == HeroSubClass.FREERUNNER){
-				Buff.affect(Dungeon.hero, Momentum.class).gainStack();
+		if (Coop.isHero(c)){ // COOP-HOOK: any party hero (was c == Dungeon.hero)
+			Hero h = (Hero)c;
+			if (h.subClass == HeroSubClass.FREERUNNER){
+				Buff.affect(h, Momentum.class).gainStack();
 			}
 
-			Dungeon.hero.busy();
+			h.busy();
 		}
 		
 		return true;
@@ -372,6 +375,9 @@ public abstract class Char extends Actor {
 	public boolean attack( Char enemy, float dmgMulti, float dmgBonus, float accMulti ) {
 
 		if (enemy == null) return false;
+		
+		// COOP-HOOK: party heroes never hurt each other with direct attacks
+		if (CoopCombat.isTeammateAttack(this, enemy)) return false;
 		
 		boolean visibleFight = Dungeon.level.heroFOV[pos] || Dungeon.level.heroFOV[enemy.pos];
 
@@ -559,10 +565,11 @@ public abstract class Char extends Actor {
 				enemy.sprite.flash();
 			}
 
-			if (!enemy.isAlive() && visibleFight) {
-				if (enemy == Dungeon.hero) {
+			// COOP-HOOK: any party hero, and party hero deaths are handled even when out of the active hero's view
+			if (!enemy.isAlive() && (visibleFight || (Coop.active() && Coop.isHero(enemy)))) {
+				if (Coop.isHero(enemy)) {
 					
-					if (this == Dungeon.hero) {
+					if (this == enemy) {
 						return true;
 					}
 
@@ -570,10 +577,10 @@ public abstract class Char extends Actor {
 							|| this instanceof MirrorImage || this instanceof PrismaticImage){
 						Badges.validateDeathFromFriendlyMagic();
 					}
-					Dungeon.fail( this );
-					GLog.n( Messages.capitalize(Messages.get(Char.class, "kill", name())) );
+					CoopCombat.heroKilled( (Hero)enemy, this ); // COOP-HOOK: was Dungeon.fail( this )
+					CoopCombat.logHeroKilled( (Hero)enemy, this );
 					
-				} else if (this == Dungeon.hero) {
+				} else if (Coop.isHero(this)) { // COOP-HOOK
 					GLog.i( Messages.capitalize(Messages.get(Char.class, "defeat", enemy.name())) );
 				}
 			}
@@ -853,9 +860,9 @@ public abstract class Char extends Actor {
 					ch.damage(dmg, link);
 					if (!ch.isAlive()) {
 						link.detach();
-						if (ch == Dungeon.hero){
+						if (Coop.isHero(ch)){ // COOP-HOOK: any party hero
 							Badges.validateDeathFromFriendlyMagic();
-							Dungeon.fail(src);
+							CoopCombat.heroKilled((Hero)ch, src); // COOP-HOOK: was Dungeon.fail(src)
 							GLog.n( Messages.get(LifeLink.class, "ondeath") );
 						}
 					}
@@ -1323,7 +1330,7 @@ public abstract class Char extends Actor {
 		}
 		pos = step;
 		
-		if (this != Dungeon.hero) {
+		if (this != Dungeon.hero && !(Coop.active() && Coop.isHero(this))) { // COOP-HOOK: party heroes stay visible
 			sprite.visible = Dungeon.level.heroFOV[pos];
 		}
 		

@@ -28,6 +28,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Bleeding;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Buff;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Light;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCombat;
 import com.shatteredpixel.shatteredpixeldungeon.effects.Pushing;
 import com.shatteredpixel.shatteredpixeldungeon.effects.TargetedCell;
 import com.shatteredpixel.shatteredpixeldungeon.mechanics.Ballistica;
@@ -125,7 +126,7 @@ public class RipperDemon extends Mob {
 			if (enemy != null) {
 				lastEnemyPos = enemy.pos;
 			} else {
-				lastEnemyPos = Dungeon.hero.pos;
+				lastEnemyPos = CoopCombat.focusHero(pos).pos; // COOP-HOOK: was Dungeon.hero.pos
 			}
 		}
 

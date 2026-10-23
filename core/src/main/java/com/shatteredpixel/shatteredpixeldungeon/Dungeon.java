@@ -43,6 +43,9 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.Blacksmith;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.Ghost;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.Imp;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.Wandmaker;
+import com.shatteredpixel.shatteredpixeldungeon.coop.Coop;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopQuickslots;
 import com.shatteredpixel.shatteredpixeldungeon.items.Amulet;
 import com.shatteredpixel.shatteredpixeldungeon.items.Generator;
 import com.shatteredpixel.shatteredpixeldungeon.items.Heap;
@@ -284,6 +287,8 @@ public class Dungeon {
 		Badges.reset();
 		
 		GamesInProgress.selectedClass.initHero( hero );
+
+		CoopCore.initParty(); // COOP-HOOK: creates extra party heroes, or resets a stale party
 	}
 
 	public static boolean isChallenged( int mask ) {
@@ -477,8 +482,10 @@ public class Dungeon {
 		
 		PathFinder.setMapSize(level.width(), level.height());
 		
+		CoopCore.beforeSwitchLevel( level ); // COOP-HOOK
 		Dungeon.level = level;
 		hero.pos = pos;
+		CoopCore.placeParty( level, pos ); // COOP-HOOK: other heroes arrive around pos
 
 		if (hero.buff(AscensionChallenge.class) != null){
 			hero.buff(AscensionChallenge.class).onLevelSwitch();
@@ -501,7 +508,8 @@ public class Dungeon {
 				}
 			}
 		}
-		
+		CoopCore.displaceMobsFromParty( level ); // COOP-HOOK
+
 		Light light = hero.buff( Light.class );
 		hero.viewDistance = light == null ? level.viewDistance : Math.max( Light.DISTANCE, level.viewDistance );
 		
@@ -634,7 +642,10 @@ public class Dungeon {
 			bundle.put( LAST_PLAYED, lastPlayed = Game.realTime);
 			bundle.put( CHALLENGES, challenges );
 			bundle.put( MOBS_TO_CHAMPION, mobsToChampion );
-			bundle.put( HERO, hero );
+			CoopQuickslots.beforeSave(); // COOP-HOOK: Dungeon.quickslot = primary's while HERO is stored
+			bundle.put( HERO, CoopCore.heroToSave() ); // COOP-HOOK: primary hero (== hero in solo)
+			Coop.store( bundle ); // COOP-HOOK
+			CoopQuickslots.store( bundle ); // COOP-HOOK
 			bundle.put( DEPTH, depth );
 			bundle.put( BRANCH, branch );
 
@@ -646,6 +657,7 @@ public class Dungeon {
 			}
 
 			quickslot.storePlaceholders( bundle );
+			CoopQuickslots.afterSave(); // COOP-HOOK
 
 			Bundle limDrops = new Bundle();
 			LimitedDrops.store( limDrops );
@@ -811,6 +823,9 @@ public class Dungeon {
 		
 		hero = null;
 		hero = (Hero)bundle.get( HERO );
+		Coop.restore( bundle ); // COOP-HOOK: also moves hero to the saved active hero
+		CoopQuickslots.restore( bundle ); // COOP-HOOK
+		CoopCore.onGameLoaded(); // COOP-HOOK
 		
 		depth = bundle.getInt( DEPTH );
 		branch = bundle.getInt( BRANCH );
@@ -870,6 +885,7 @@ public class Dungeon {
 	}
 	
 	public static void fail( Object cause ) {
+		if (Coop.active() && !Coop.allDead()) return; // COOP-HOOK: only the last death ends the run
 		if (WndResurrect.instance == null) {
 			updateLevelExplored();
 			Statistics.gameWon = false;
@@ -910,7 +926,9 @@ public class Dungeon {
 		if (level == null) {
 			return;
 		}
-		
+
+		if (CoopCore.observe( dist )) return; // COOP-HOOK: per hero FOV, heroFOV = union
+
 		level.updateFieldOfView(hero, level.heroFOV);
 
 		int x = hero.pos % level.width();

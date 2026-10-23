@@ -59,6 +59,8 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.hero.spells.ClericSpell;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.spells.GuidingLight;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.spells.Stasis;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.DirectableAlly;
+import com.shatteredpixel.shatteredpixeldungeon.coop.Coop;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCombat;
 import com.shatteredpixel.shatteredpixeldungeon.effects.CellEmitter;
 import com.shatteredpixel.shatteredpixeldungeon.effects.FloatingText;
 import com.shatteredpixel.shatteredpixeldungeon.effects.Surprise;
@@ -147,9 +149,16 @@ public abstract class Mob extends Char {
 			float percent = HP / (float) HT;
 			HT = Math.round(HT * AscensionChallenge.statModifier(this));
 			HP = Math.round(HT * percent);
+			CoopCombat.scaleNewMob(this); // COOP-HOOK: party size HP scaling, once per mob
 			firstAdded = false;
 		}
 	}
+
+	// COOP-HOOK: coop combat state, saved in the bundle only when used
+	public boolean coopHpScaled = false;
+	public int coopLastHeroID = -1;
+	private static final String COOP_HP_SCALED = "coop_hp_scaled";
+	private static final String COOP_LAST_HERO = "coop_last_hero";
 
 	private static final String STATE	= "state";
 	private static final String SEEN	= "seen";
@@ -202,6 +211,10 @@ public abstract class Mob extends Char {
 				bundle.put(WANDER_POS_IDX, wanderPosIdx);
 			}
 		}
+
+		// COOP-HOOK
+		if (coopHpScaled) bundle.put( COOP_HP_SCALED, true );
+		if (coopLastHeroID != -1) bundle.put( COOP_LAST_HERO, coopLastHeroID );
 	}
 	
 	@Override
@@ -245,6 +258,10 @@ public abstract class Mob extends Char {
 		}
 
 		timeSeenAt = bundle.getFloat( SWARM_TIME );
+
+		// COOP-HOOK
+		coopHpScaled = bundle.getBoolean( COOP_HP_SCALED );
+		if (bundle.contains(COOP_LAST_HERO)) coopLastHeroID = bundle.getInt( COOP_LAST_HERO );
 
 		//no need to actually save this, must be false
 		firstAdded = false;
@@ -332,7 +349,7 @@ public abstract class Mob extends Char {
 					mob.beckon(	enemy.pos);
 				}
 			}
-			Buff.affect( Dungeon.hero, SwarmIntelTracker.class );
+			CoopCombat.trackSwarmIntel(); // COOP-HOOK: was Buff.affect( Dungeon.hero, SwarmIntelTracker.class )
 		} else {
 			timeSeenAt = Float.MAX_VALUE;
 		}
@@ -393,10 +410,15 @@ public abstract class Mob extends Char {
 		if ( enemy == null || !enemy.isAlive() || !Actor.chars().contains(enemy) || state == WANDERING) {
 			newEnemy = true;
 		//We are amoked and current enemy is the hero
-		} else if (buff( Amok.class ) != null && enemy == Dungeon.hero) {
+		} else if (buff( Amok.class ) != null && Coop.isHero(enemy)) { // COOP-HOOK: any party hero
 			newEnemy = true;
 		//We are charmed and current enemy is what charmed us
 		} else if (buff(Charm.class) != null && buff(Charm.class).object == enemy.id()) {
+			newEnemy = true;
+		}
+
+		// COOP-HOOK: we lost sight of the hero we hunt, but another party hero is in view
+		if (!newEnemy && CoopCombat.shouldRetarget(this, enemy, fieldOfView)){
 			newEnemy = true;
 		}
 
@@ -434,9 +456,7 @@ public abstract class Mob extends Char {
 					
 					if (enemies.isEmpty()) {
 						//try to find the hero third
-						if (fieldOfView[Dungeon.hero.pos] && Dungeon.hero.invisible <= 0) {
-							enemies.add(Dungeon.hero);
-						}
+						CoopCombat.addVisibleHeroes(enemies, fieldOfView); // COOP-HOOK: every visible party hero
 					}
 				}
 				
@@ -461,9 +481,7 @@ public abstract class Mob extends Char {
 						enemies.add(mob);
 
 				//and look for the hero
-				if (fieldOfView[Dungeon.hero.pos] && Dungeon.hero.invisible <= 0) {
-					enemies.add(Dungeon.hero);
-				}
+				CoopCombat.addVisibleHeroes(enemies, fieldOfView); // COOP-HOOK: every visible party hero
 				
 			}
 
@@ -501,13 +519,14 @@ public abstract class Mob extends Char {
 					} else if ((canAttack(curr) && !canAttack(closest))
 							|| (currDist < closestDist)){
 						closest = curr;
-					} else if ( curr == Dungeon.hero &&
-							(currDist == closestDist) || (canAttack(curr) && canAttack(closest))){
+					// COOP-HOOK: was ( curr == Dungeon.hero && (currDist == closestDist) || (canAttack(curr) && canAttack(closest)) )
+					} else if ( CoopCombat.preferAsTarget(this, curr, closest,
+							currDist == closestDist, canAttack(curr) && canAttack(closest))){
 						closest = curr;
 					}
 				}
 				//if we were going to target the hero, but an afterimage exists, target that instead
-				if (closest == Dungeon.hero){
+				if (Coop.isHero(closest)){ // COOP-HOOK
 					for (Char ch : enemies){
 						if (ch instanceof Feint.AfterImage){
 							closest = ch;
@@ -817,7 +836,7 @@ public abstract class Mob extends Char {
 	
 	@Override
 	public int defenseSkill( Char enemy ) {
-		if (buff(GuidingLight.Illuminated.class) != null && Dungeon.hero.heroClass == HeroClass.CLERIC){
+		if (buff(GuidingLight.Illuminated.class) != null && CoopCombat.illuminatedByCleric(enemy)){ // COOP-HOOK
 			//if the attacker is the cleric, they must be using a weapon they have the str for
 			if (enemy instanceof Hero){
 				Hero h = (Hero) enemy;
@@ -832,7 +851,7 @@ public abstract class Mob extends Char {
 
 		if ( !surprisedBy(enemy)
 				&& paralysed == 0
-				&& !(alignment == Alignment.ALLY && enemy == Dungeon.hero)) {
+				&& !(alignment == Alignment.ALLY && Coop.isHero(enemy))) { // COOP-HOOK
 			return this.defenseSkill;
 		} else {
 			return 0;
@@ -853,8 +872,9 @@ public abstract class Mob extends Char {
 			Badges.validateRogueUnlock();
 			//TODO this is somewhat messy, it would be nicer to not have to manually handle delays here
 			// playing the strong hit sound might work best as another property of weapon?
-			if (Dungeon.hero.belongings.attackingWeapon() instanceof SpiritBow.SpiritArrow
-				|| Dungeon.hero.belongings.attackingWeapon() instanceof Dart){
+			Hero attackingHero = CoopCombat.heroOf(enemy); // COOP-HOOK: was Dungeon.hero
+			if (attackingHero.belongings.attackingWeapon() instanceof SpiritBow.SpiritArrow
+				|| attackingHero.belongings.attackingWeapon() instanceof Dart){
 				Sample.INSTANCE.playDelayed(Assets.Sounds.HIT_STRONG, 0.125f);
 			} else {
 				Sample.INSTANCE.play(Assets.Sounds.HIT_STRONG);
@@ -879,18 +899,19 @@ public abstract class Mob extends Char {
 
 		if (buff(SoulMark.class) != null) {
 			int restoration = Math.min(damage, HP+shielding());
+			Hero warlock = CoopCombat.soulMarkOwner(enemy); // COOP-HOOK: was Dungeon.hero
 			
 			//physical damage that doesn't come from the hero is less effective
-			if (enemy != Dungeon.hero){
-				restoration = Math.round(restoration * 0.4f*Dungeon.hero.pointsInTalent(Talent.SOUL_SIPHON)/3f);
+			if (enemy != warlock){
+				restoration = Math.round(restoration * 0.4f*warlock.pointsInTalent(Talent.SOUL_SIPHON)/3f);
 			}
 			if (restoration > 0) {
-				Buff.affect(Dungeon.hero, Hunger.class).affectHunger(restoration*Dungeon.hero.pointsInTalent(Talent.SOUL_EATER)/3f);
+				Buff.affect(warlock, Hunger.class).affectHunger(restoration*warlock.pointsInTalent(Talent.SOUL_EATER)/3f);
 
-				if (Dungeon.hero.HP < Dungeon.hero.HT) {
+				if (warlock.HP < warlock.HT) {
 					int heal = (int)Math.ceil(restoration * 0.4f);
-					Dungeon.hero.HP = Math.min(Dungeon.hero.HT, Dungeon.hero.HP + heal);
-					Dungeon.hero.sprite.showStatusWithIcon(CharSprite.POSITIVE, Integer.toString(heal), FloatingText.HEALING);
+					warlock.HP = Math.min(warlock.HT, warlock.HP + heal);
+					warlock.sprite.showStatusWithIcon(CharSprite.POSITIVE, Integer.toString(heal), FloatingText.HEALING);
 				}
 			}
 		}
@@ -908,7 +929,7 @@ public abstract class Mob extends Char {
 	}
 
 	public boolean surprisedBy( Char enemy, boolean attacking ){
-		return enemy == Dungeon.hero
+		return Coop.isHero(enemy) // COOP-HOOK: any party hero can surprise attack
 				&& (enemy.invisible > 0 || !enemySeen || (fieldOfView != null && fieldOfView.length == Dungeon.level.length() && !fieldOfView[enemy.pos]))
 				&& (!attacking || enemy.canSurpriseAttack());
 	}
@@ -939,6 +960,7 @@ public abstract class Mob extends Char {
 	public void damage( int dmg, Object src ) {
 
 		if (!isInvulnerable(src.getClass())) {
+			CoopCombat.recordDamage(this, src); // COOP-HOOK: remember the last hero that hit us
 			if (state == SLEEPING) {
 				state = WANDERING;
 			}
@@ -947,12 +969,13 @@ public abstract class Mob extends Char {
 					alerted = true;
 					//assume the hero is hitting us in these common cases
 					if (src instanceof Wand || src instanceof ClericSpell || src instanceof ArmorAbility) {
-						aggro(Dungeon.hero);
-						target = Dungeon.hero.pos;
+						Hero caster = CoopCombat.attributedHero(this); // COOP-HOOK: was Dungeon.hero
+						aggro(caster);
+						target = caster.pos;
 					}
 				} else {
 					if (src instanceof Wand || src instanceof ClericSpell || src instanceof ArmorAbility) {
-						recentlyAttackedBy.add(Dungeon.hero);
+						recentlyAttackedBy.add(CoopCombat.attributedHero(this)); // COOP-HOOK: was Dungeon.hero
 					}
 				}
 			}
@@ -969,12 +992,12 @@ public abstract class Mob extends Char {
 		
 		Dungeon.level.mobs.remove( this );
 
-		if (Dungeon.hero.buff(MindVision.class) != null){
+		if (CoopCombat.anyHeroHas(MindVision.class)){ // COOP-HOOK
 			Dungeon.observe();
 			GameScene.updateFog(pos, 2);
 		}
 
-		if (Dungeon.hero.isAlive()) {
+		if (CoopCombat.anyHeroAlive()) { // COOP-HOOK
 			
 			if (alignment == Alignment.ENEMY) {
 				Statistics.enemiesSlain++;
@@ -985,6 +1008,12 @@ public abstract class Mob extends Char {
 
 				AscensionChallenge.processEnemyKill(this);
 				
+				// COOP-HOOK: every alive hero on the level gets the exp
+				if (Coop.active()){
+					CoopCombat.awardKillExp(this);
+					return;
+				}
+
 				int exp = Dungeon.hero.lvl <= maxLvl ? EXP : 0;
 
 				//during ascent, under-levelled enemies grant 10 xp each until level 30
@@ -1035,22 +1064,24 @@ public abstract class Mob extends Char {
 
 			rollToDropLoot();
 
-			if (cause == Dungeon.hero || cause instanceof Weapon || cause instanceof Weapon.Enchantment){
-				if (Dungeon.hero.hasTalent(Talent.LETHAL_MOMENTUM)
-						&& Random.Float() < 0.34f + 0.33f* Dungeon.hero.pointsInTalent(Talent.LETHAL_MOMENTUM)){
-					Buff.affect(Dungeon.hero, Talent.LethalMomentumTracker.class, 0f);
+			// COOP-HOOK: credit the hero that got the kill (was cause == Dungeon.hero || Weapon || Enchantment)
+			Hero killer = CoopCombat.meleeKiller(cause);
+			if (killer != null){
+				if (killer.hasTalent(Talent.LETHAL_MOMENTUM)
+						&& Random.Float() < 0.34f + 0.33f* killer.pointsInTalent(Talent.LETHAL_MOMENTUM)){
+					Buff.affect(killer, Talent.LethalMomentumTracker.class, 0f);
 				}
-				if (Dungeon.hero.heroClass != HeroClass.DUELIST
-						&& Dungeon.hero.hasTalent(Talent.LETHAL_HASTE)
-						&& Dungeon.hero.buff(Talent.LethalHasteCooldown.class) == null){
-					Buff.affect(Dungeon.hero, Talent.LethalHasteCooldown.class, 100f);
-					Buff.affect(Dungeon.hero, GreaterHaste.class).set(2 + 2*Dungeon.hero.pointsInTalent(Talent.LETHAL_HASTE));
+				if (killer.heroClass != HeroClass.DUELIST
+						&& killer.hasTalent(Talent.LETHAL_HASTE)
+						&& killer.buff(Talent.LethalHasteCooldown.class) == null){
+					Buff.affect(killer, Talent.LethalHasteCooldown.class, 100f);
+					Buff.affect(killer, GreaterHaste.class).set(2 + 2*killer.pointsInTalent(Talent.LETHAL_HASTE));
 				}
 			}
 
 		}
 
-		if (Dungeon.hero.isAlive() && !Dungeon.level.heroFOV[pos]) {
+		if (CoopCombat.anyHeroAlive() && !Dungeon.level.heroFOV[pos]) { // COOP-HOOK
 			GLog.i( Messages.get(this, "died") );
 		}
 
@@ -1060,7 +1091,7 @@ public abstract class Mob extends Char {
 
 		if (!(this instanceof Wraith)
 				&& soulMarked
-				&& Random.Float() < (0.4f*Dungeon.hero.pointsInTalent(Talent.NECROMANCERS_MINIONS)/3f)){
+				&& Random.Float() < (0.4f*CoopCombat.soulMarkOwner(null).pointsInTalent(Talent.NECROMANCERS_MINIONS)/3f)){ // COOP-HOOK
 			Wraith w = Wraith.spawnAt(pos, Wraith.class);
 			if (w != null) {
 				Buff.affect(w, Corruption.class);
@@ -1126,8 +1157,8 @@ public abstract class Mob extends Char {
 
 		//soul eater talent
 		if (buff(SoulMark.class) != null &&
-				Random.Int(10) < Dungeon.hero.pointsInTalent(Talent.SOUL_EATER)){
-			Talent.onFoodEaten(Dungeon.hero, 0, null);
+				Random.Int(10) < CoopCombat.soulMarkOwner(null).pointsInTalent(Talent.SOUL_EATER)){ // COOP-HOOK
+			Talent.onFoodEaten(CoopCombat.soulMarkOwner(null), 0, null);
 		}
 
 	}
@@ -1244,9 +1275,10 @@ public abstract class Mob extends Char {
 					if (fieldOfView[ch.pos] && ch.invisible == 0 && ch.alignment != alignment && ch.alignment != Alignment.NEUTRAL){
 						float bestChance = detectionChance(ch);
 						//silent steps rogue talent, which also applies to rogue's shadow clone
+						// COOP-HOOK: the hero's own talent (was Dungeon.hero)
 						if ((ch instanceof Hero || ch instanceof ShadowClone.ShadowAlly)
-								&& Dungeon.hero.hasTalent(Talent.SILENT_STEPS)){
-							if (distance(ch) >= 4 - Dungeon.hero.pointsInTalent(Talent.SILENT_STEPS)) {
+								&& CoopCombat.heroOf(ch).hasTalent(Talent.SILENT_STEPS)){
+							if (distance(ch) >= 4 - CoopCombat.heroOf(ch).pointsInTalent(Talent.SILENT_STEPS)) {
 								bestChance = Float.POSITIVE_INFINITY;
 							}
 						}
@@ -1644,7 +1676,7 @@ public abstract class Mob extends Char {
 			spend(TICK);
 			//hero must know if they are detected
 			if (!Dungeon.level.heroFOV[pos]){
-				Buff.affect(Dungeon.hero, TalismanOfForesight.CharAwareness.class, 1f).charID = id();
+				Buff.affect(CoopCombat.heroOf(enemy), TalismanOfForesight.CharAwareness.class, 1f).charID = id(); // COOP-HOOK
 			}
 			return true;
 		}
@@ -1696,7 +1728,7 @@ public abstract class Mob extends Char {
 				sprite.showInvestigate();
 				//hero must know if they are detected
 				if (!Dungeon.level.heroFOV[pos]){
-					Buff.affect(Dungeon.hero, TalismanOfForesight.CharAwareness.class, 1f).charID = id();
+					Buff.affect(CoopCombat.heroOf(enemy), TalismanOfForesight.CharAwareness.class, 1f).charID = id(); // COOP-HOOK
 				}
 			}
 		}
@@ -1717,7 +1749,7 @@ public abstract class Mob extends Char {
 	private static ArrayList<Mob> heldAllies = new ArrayList<>();
 
 	public static void holdAllies( Level level ){
-		holdAllies(level, Dungeon.hero.pos);
+		holdAllies(level, CoopCombat.holdPos()); // COOP-HOOK: was Dungeon.hero.pos
 	}
 
 	public static void holdAllies( Level level, int holdFromPos ){
@@ -1735,7 +1767,7 @@ public abstract class Mob extends Char {
 			//preserve other intelligent allies if they are near the hero
 			} else if (mob.alignment == Alignment.ALLY
 					&& mob.intelligentAlly
-					&& Dungeon.level.distance(holdFromPos, mob.pos) <= 5){
+					&& CoopCombat.inHoldRange(level, holdFromPos, mob.pos)){ // COOP-HOOK: near any travelling hero
 				level.mobs.remove( mob );
 				heldAllies.add(mob);
 			}
@@ -1751,7 +1783,8 @@ public abstract class Mob extends Char {
 			
 			ArrayList<Integer> candidatePositions = new ArrayList<>();
 			for (int i : PathFinder.NEIGHBOURS8) {
-				if (!Dungeon.level.solid[i+pos] && !Dungeon.level.avoid[i+pos] && level.findMob(i+pos) == null){
+				if (!Dungeon.level.solid[i+pos] && !Dungeon.level.avoid[i+pos] && level.findMob(i+pos) == null
+						&& !CoopCombat.cellTakenByHero(i+pos)){ // COOP-HOOK
 					candidatePositions.add(i+pos);
 				}
 			}
@@ -1807,6 +1840,7 @@ public abstract class Mob extends Char {
 			}
 		}
 		heldAllies.clear();
+		CoopCombat.onAlliesRestored(); // COOP-HOOK
 	}
 	
 	public static void clearHeldAllies(){

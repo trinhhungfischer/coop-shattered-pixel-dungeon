@@ -28,6 +28,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.PinCushion;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.DwarfKing;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopLoot;
 import com.shatteredpixel.shatteredpixeldungeon.effects.MagicMissile;
 import com.shatteredpixel.shatteredpixeldungeon.items.Heap;
 import com.shatteredpixel.shatteredpixeldungeon.items.Item;
@@ -109,7 +110,7 @@ public class TelekineticGrab extends TargetedSpell {
 				h.sprite.drop();
 			} else {
 
-				while (!h.isEmpty()) {
+				while (!h.isEmpty() && !CoopLoot.alreadyLooted(h, hero)) { // COOP-HOOK
 					Item item = h.peek();
 					if (item.doPickUp(hero, h.pos)) {
 						h.pickUp();

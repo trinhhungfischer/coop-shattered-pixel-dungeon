@@ -39,6 +39,9 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.AscensionChallenge;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.ChampionEnemy;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Talent;
+import com.shatteredpixel.shatteredpixeldungeon.coop.Coop;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopUI;
+import com.shatteredpixel.shatteredpixeldungeon.coop.PartyPane;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.DemonSpawner;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Ghoul;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mimic;
@@ -176,6 +179,7 @@ public class GameScene extends PixelScene {
 
 	private MenuPane menu;
 	private StatusPane status;
+	private PartyPane party; // COOP-HOOK
 
 	private BossHealthBar boss;
 
@@ -230,6 +234,8 @@ public class GameScene extends PixelScene {
 		}
 
 		Dungeon.level.playLevelMusic();
+
+		CoopUI.init(); // COOP-HOOK
 
 		SPDSettings.lastClass(Dungeon.hero.heroClass.ordinal());
 		
@@ -323,6 +329,7 @@ public class GameScene extends PixelScene {
 		hero.place( Dungeon.hero.pos );
 		hero.updateArmor();
 		mobs.add( hero );
+		CoopUI.ensureSprites(); // COOP-HOOK: sprites for the other party heroes
 		
 		for (Mob mob : Dungeon.level.mobs) {
 			addMobSprite( mob );
@@ -487,6 +494,13 @@ public class GameScene extends PixelScene {
 		StatusPane.buffBarRowAdjusts = buffBarRowAdjusts;
 		status.setRect(insets.left, uiSize > 0 ? uiCamera.height-39-insets.bottom : screentop, uiCamera.width - insets.left - insets.right, 0 );
 		add(status);
+
+		// COOP-HOOK: party HUD, below the status pane or top-left when the status pane is at the bottom
+		party = new PartyPane();
+		party.camera = uiCamera;
+		party.visible = party.active = Coop.active();
+		party.setPos(insets.left + 2, uiSize > 0 ? screentop + 2 : status.bottom() + 1);
+		add(party);
 
 		if (uiSize < 2 && largeInsetTop != 0) {
 			SkinnedBlock bar = new SkinnedBlock(uiCamera.width, largeInsetTop, TextureCache.createSolid(0x88000000));
@@ -883,6 +897,8 @@ public class GameScene extends PixelScene {
 			return;
 		}
 
+		if (Coop.active()) CoopUI.update( party ); // COOP-HOOK
+
 		super.update();
 
 		if (notifyDelay > 0) notifyDelay -= Game.elapsed;
@@ -1189,6 +1205,27 @@ public class GameScene extends PixelScene {
 
 	public static void addSprite( Mob mob ) {
 		scene.addMobSprite( mob );
+	}
+
+	// COOP-HOOK: sprite for a party hero other than the one GameScene.create builds
+	public static void addHeroSprite( Hero h ) {
+		if (scene != null) scene.addPartySprite( h );
+	}
+
+	// COOP-HOOK
+	private synchronized void addPartySprite( Hero h ) {
+		HeroSprite sprite = new HeroSprite( h );
+		sprite.place( h.pos );
+		sprite.updateArmor();
+		mobs.add( sprite );
+		sortMobSprites();
+	}
+
+	// COOP-HOOK: re-points hero-specific UI at Dungeon.hero after a hotseat turn switch
+	public static void coopRefreshHeroUI() {
+		if (scene == null) return;
+		if (scene.status != null) scene.status.coopRefreshHero();
+		if (cellSelector != null) cellSelector.resetKeyHold();
 	}
 	
 	public static void add( Mob mob, float delay ) {

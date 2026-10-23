@@ -31,6 +31,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.FetidRat;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.GnollTrickster;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.GreatCrab;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopQuests;
 import com.shatteredpixel.shatteredpixeldungeon.items.Generator;
 import com.shatteredpixel.shatteredpixeldungeon.items.armor.Armor;
 import com.shatteredpixel.shatteredpixeldungeon.items.armor.LeatherArmor;
@@ -135,6 +136,11 @@ public class Ghost extends NPC {
 		if (c != Dungeon.hero){
 			return super.interact(c);
 		}
+
+		//already took their reward, the ghost just steps aside
+		if (CoopQuests.hasClaimed( CoopQuests.GHOST, Dungeon.hero )){ // COOP-HOOK
+			return super.interact(c);
+		}
 		
 		if (Quest.given) {
 			if (Quest.weapon != null) {
@@ -231,6 +237,7 @@ public class Ghost extends NPC {
 		
 		public static void reset() {
 			spawned = false;
+			CoopQuests.reset( CoopQuests.GHOST ); // COOP-HOOK
 			
 			weapon = null;
 			armor = null;
@@ -271,6 +278,8 @@ public class Ghost extends NPC {
 					node.put(ENCHANT, enchant);
 					node.put(GLYPH, glyph);
 				}
+
+				CoopQuests.store( node, CoopQuests.GHOST ); // COOP-HOOK
 			}
 			
 			bundle.put( NODE, node );
@@ -295,6 +304,8 @@ public class Ghost extends NPC {
 					enchant = (Weapon.Enchantment) node.get(ENCHANT);
 					glyph   = (Armor.Glyph) node.get(GLYPH);
 				}
+
+				CoopQuests.restore( node, CoopQuests.GHOST ); // COOP-HOOK
 			} else {
 				reset();
 			}

@@ -23,9 +23,11 @@ package com.shatteredpixel.shatteredpixeldungeon.windows;
 
 import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.Wandmaker;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopQuests;
 import com.shatteredpixel.shatteredpixeldungeon.items.Item;
 import com.shatteredpixel.shatteredpixeldungeon.items.quest.CorpseDust;
 import com.shatteredpixel.shatteredpixeldungeon.items.quest.Embers;
+import com.shatteredpixel.shatteredpixeldungeon.items.wands.Wand;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
 import com.shatteredpixel.shatteredpixeldungeon.plants.Rotberry;
 import com.shatteredpixel.shatteredpixeldungeon.scenes.GameScene;
@@ -77,7 +79,7 @@ public class WndWandmaker extends Window {
 		ItemButton btnWand1 = new ItemButton(){
 			@Override
 			protected void onClick() {
-				if (Dungeon.hero.belongings.contains(questItem) && item() != null) {
+				if ((Dungeon.hero.belongings.contains(questItem) || CoopQuests.anyClaimed(CoopQuests.WANDMAKER)) && item() != null) { // COOP-HOOK
 					GameScene.show(new RewardWindow(item()));
 				} else {
 					hide();
@@ -91,7 +93,7 @@ public class WndWandmaker extends Window {
 		ItemButton btnWand2 = new ItemButton(){
 			@Override
 			protected void onClick() {
-				if (Dungeon.hero.belongings.contains(questItem) && item() != null) {
+				if ((Dungeon.hero.belongings.contains(questItem) || CoopQuests.anyClaimed(CoopQuests.WANDMAKER)) && item() != null) { // COOP-HOOK
 					GameScene.show(new RewardWindow(item()));
 				} else {
 					hide();
@@ -113,13 +115,26 @@ public class WndWandmaker extends Window {
 
 		hide();
 
-		questItem.detach( Dungeon.hero.belongings.backpack );
+		//COOP-HOOK: teammates after the first see a stand-in quest item, already turned in
+		if (!CoopQuests.anyClaimed( CoopQuests.WANDMAKER )) {
+			questItem.detach( Dungeon.hero.belongings.backpack );
+		}
+
+		Item coopCopy = CoopQuests.copyReward( reward ); // COOP-HOOK: taken before identify
 
 		reward.identify(false);
 		if (reward.doPickUp( Dungeon.hero )) {
 			GLog.i( Messages.capitalize(Messages.get(Dungeon.hero, "you_now_have", reward.name())) );
 		} else {
 			Dungeon.level.drop( reward, wandmaker.pos ).sprite.drop();
+		}
+
+		//COOP-HOOK: the wandmaker stays with a fresh copy until every alive hero picked a wand
+		if (coopCopy != null && CoopQuests.claimAndStay( CoopQuests.WANDMAKER, Dungeon.hero )) {
+			if (reward == Wandmaker.Quest.wand1) Wandmaker.Quest.wand1 = (Wand) coopCopy;
+			else if (reward == Wandmaker.Quest.wand2) Wandmaker.Quest.wand2 = (Wand) coopCopy;
+			wandmaker.yell( Messages.get(this, "farewell", Messages.titleCase(Dungeon.hero.name())) );
+			return;
 		}
 		
 		wandmaker.yell( Messages.get(this, "farewell", Messages.titleCase(Dungeon.hero.name())) );

@@ -23,6 +23,7 @@ package com.shatteredpixel.shatteredpixeldungeon.sprites;
 
 import com.shatteredpixel.shatteredpixeldungeon.Assets;
 import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopLoot;
 import com.shatteredpixel.shatteredpixeldungeon.effects.CellEmitter;
 import com.shatteredpixel.shatteredpixeldungeon.effects.Speck;
 import com.shatteredpixel.shatteredpixeldungeon.items.Gold;
@@ -233,7 +234,7 @@ public class ItemSprite extends MovieClip {
 				view( 0, null );
 		}
 
-		alpha( heap.hidden ? 0.1f : 1f);
+		alpha( heap.hidden ? 0.1f : CoopLoot.heapAlpha( heap )); // COOP-HOOK: faded when already looted
 
 		return this;
 	}
