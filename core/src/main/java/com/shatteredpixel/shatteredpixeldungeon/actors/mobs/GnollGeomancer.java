@@ -32,6 +32,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Invisibility;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Paralysis;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.ShieldBuff;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.Blacksmith;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopBosses;
 import com.shatteredpixel.shatteredpixeldungeon.effects.CellEmitter;
 import com.shatteredpixel.shatteredpixeldungeon.effects.Pushing;
 import com.shatteredpixel.shatteredpixeldungeon.effects.Speck;
@@ -631,13 +632,13 @@ public class GnollGeomancer extends Mob {
 							aim = GnollGeomancer.prepRockThrowAttack(enemy, GnollGeomancer.this);
 						}
 
-						Dungeon.hero.interrupt();
+						CoopBosses.interruptAll(); // COOP-HOOK: was Dungeon.hero.interrupt()
 						abilityCooldown = Random.NormalIntRange(3, 5);
 						spend(delay);
 						return true;
 					} else if (GnollGeomancer.prepRockFallAttack(enemy, GnollGeomancer.this, 6-2*curbracket, true)) {
 						lastAbilityWasRockfall = true;
-						Dungeon.hero.interrupt();
+						CoopBosses.interruptAll(); // COOP-HOOK: was Dungeon.hero.interrupt()
 						spend(GameMath.gate(TICK, (int)Math.ceil(enemy.cooldown()), 3*TICK));
 						abilityCooldown = Random.NormalIntRange(3, 5);
 						return true;
@@ -720,7 +721,7 @@ public class GnollGeomancer extends Mob {
 						Sample.INSTANCE.play(Assets.Sounds.ROCKS);
 
 						Char ch = Actor.findChar(rockPath.collisionPos);
-						if (ch == Dungeon.hero){
+						if (CoopBosses.isHero(ch)){ // COOP-HOOK: was ch == Dungeon.hero
 							PixelScene.shake( 3, 0.7f );
 						} else {
 							PixelScene.shake(0.5f, 0.5f);
@@ -729,13 +730,13 @@ public class GnollGeomancer extends Mob {
 						if (ch != null && !(ch instanceof GnollGeomancer)){
 							ch.damage(Random.NormalIntRange(6, 12), new GnollGeomancer.Boulder());
 
-							if (ch == Dungeon.hero){
+							if (CoopBosses.isHero(ch)){ // COOP-HOOK: was ch == Dungeon.hero
 								Statistics.questScores[2] -= 100;
 							}
 
 							if (ch.isAlive()){
 								Buff.prolong( ch, Paralysis.class, ch instanceof GnollGuard ? 10 : 3 );
-							} else if (!ch.isAlive() && ch == Dungeon.hero) {
+							} else if (!ch.isAlive() && CoopBosses.isHero(ch)) { // COOP-HOOK: was ch == Dungeon.hero
 								Badges.validateDeathFromEnemyMagic();
 								Dungeon.fail( source.getClass() );
 								GLog.n( Messages.get( GnollGeomancer.class, "rock_kill") );
@@ -838,12 +839,12 @@ public class GnollGeomancer extends Mob {
 		@Override
 		public void affectChar(Char ch) {
 			ch.damage(Random.NormalIntRange(6, 12), this);
-			if (ch == Dungeon.hero){
+			if (CoopBosses.isHero(ch)){ // COOP-HOOK: was ch == Dungeon.hero
 				Statistics.questScores[2] -= 100;
 			}
 			if (ch.isAlive()) {
 				Buff.prolong(ch, Paralysis.class, ch instanceof GnollGuard ? 10 : 3);
-			} else if (ch == Dungeon.hero){
+			} else if (CoopBosses.isHero(ch)){ // COOP-HOOK: was ch == Dungeon.hero
 				Dungeon.fail( target );
 				GLog.n( Messages.get( GnollGeomancer.class, "rockfall_kill") );
 			}

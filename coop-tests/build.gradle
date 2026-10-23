@@ -1,0 +1,29 @@
+apply plugin: 'java'
+
+[compileJava]*.options*.encoding = 'UTF-8'
+java.sourceCompatibility = java.targetCompatibility = appJavaCompatibility
+
+dependencies {
+    implementation project(':core')
+    implementation project(':desktop')
+    implementation "com.badlogicgames.gdx:gdx-backend-headless:$gdxVersion"
+    implementation "com.badlogicgames.gdx:gdx-backend-lwjgl3:$gdxVersion"
+    implementation "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-desktop"
+    implementation "com.badlogicgames.gdx:gdx-freetype-platform:$gdxVersion:natives-desktop"
+}
+
+//runs a full coop game without a window: ./gradlew coop-tests:coopSim [-Pargs="seed depth actions"]
+tasks.register('coopSim', JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.shatteredpixel.shatteredpixeldungeon.cooptest.CoopSim'
+    if (project.hasProperty('args')) {
+        args project.property('args').split(' ')
+    }
+    ignoreExitValue = false
+}
+
+//prints the runtime classpath, used to run several simulations in parallel outside gradle
+tasks.register('simClasspath') {
+    dependsOn sourceSets.main.runtimeClasspath, 'classes'
+    doLast { println "CP=" + sourceSets.main.runtimeClasspath.asPath }
+}

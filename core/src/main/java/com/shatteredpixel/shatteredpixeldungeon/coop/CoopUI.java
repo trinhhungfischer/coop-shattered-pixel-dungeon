@@ -58,8 +58,16 @@ public class CoopUI implements Coop.Listener {
 		CoopVision.init();
 	}
 
-	//hero the UI was last refreshed for
-	private static Hero shownHero = null;
+	//hero the UI and camera show: the hero whose input was last awaited. Another hero that keeps
+	//walking on its own (travel, multi-turn actions) between those inputs doesn't take the view.
+	private static volatile Hero shownHero = null;
+
+	//sprites only move the camera for the hero the UI shows
+	public static boolean hasCameraFocus( Hero h ){
+		if (!Coop.active()) return true;
+		Hero shown = shownHero;
+		return shown == null ? h == Dungeon.hero : h == shown;
+	}
 	private static boolean needsObserve = false;
 	private static volatile boolean partyDirty = true;
 	private static final ArrayList<Hero> pendingDeaths = new ArrayList<>();
@@ -80,17 +88,21 @@ public class CoopUI implements Coop.Listener {
 
 	@Override
 	public void onHeroDied( Hero hero ) {
+		synchronized (CoopUI.class) {
+			heroActions.remove( hero );
+		}
 		synchronized (pendingDeaths) {
 			pendingDeaths.add( hero );
 		}
-		heroActions.remove( hero );
 		partyDirty = true;
 	}
 
 	@Override
 	public void onPartyChanged() {
+		synchronized (CoopUI.class) {
+			heroActions.clear();
+		}
 		CoopQuickslots.onPartyChanged();
-		heroActions.clear();
 		shownHero = null;
 		partyDirty = true;
 	}
@@ -132,7 +144,7 @@ public class CoopUI implements Coop.Listener {
 		ensureSprites();
 		processDeaths();
 
-		if (Dungeon.hero != shownHero){
+		if (Dungeon.hero != shownHero && Dungeon.hero.ready){
 			boolean first = shownHero == null;
 			shownHero = Dungeon.hero;
 			GameScene.coopRefreshHeroUI(); // status pane, key holds

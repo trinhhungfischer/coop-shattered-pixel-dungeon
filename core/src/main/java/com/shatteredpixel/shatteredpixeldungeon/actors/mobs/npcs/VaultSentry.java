@@ -38,6 +38,8 @@ import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
 import com.shatteredpixel.shatteredpixeldungeon.scenes.GameScene;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.SentrySprite;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopDeaths;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore;
 import com.watabou.noosa.audio.Sample;
 import com.watabou.noosa.particles.Emitter;
 import com.watabou.utils.Bundle;
@@ -139,7 +141,7 @@ public class VaultSentry extends NPC {
 										ch.sprite.flash();
 									}
 								}
-								if (ch == Dungeon.hero) {
+								if (CoopCore.isPartyHero(ch)) { // COOP-HOOK: any party hero
 									if (Imp.Quest.hazardFreebies > 0){
 										Imp.Quest.hazardFreebies--;
 									} else {
@@ -147,8 +149,7 @@ public class VaultSentry extends NPC {
 									}
 									if (!ch.isAlive()) {
 										Badges.validateDeathFromEnemyMagic();
-										Dungeon.fail(this);
-										GLog.n(Messages.get(this, "ondeath"));
+										CoopDeaths.died(ch, this, Messages.get(this, "ondeath")); // COOP-HOOK
 									}
 								}
 							}

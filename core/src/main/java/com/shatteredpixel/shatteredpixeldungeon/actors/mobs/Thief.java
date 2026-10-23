@@ -33,6 +33,7 @@ import com.shatteredpixel.shatteredpixeldungeon.items.Item;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.ThiefSprite;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopMobs;
 import com.watabou.utils.Bundle;
 import com.watabou.utils.Random;
 
@@ -151,7 +152,7 @@ public class Thief extends Mob {
 
 			GLog.w( Messages.get(Thief.class, "stole", toSteal.name()) );
 			if (!toSteal.stackable) {
-				Dungeon.quickslot.convertToPlaceholder(toSteal);
+				CoopMobs.convertStolenToPlaceholder(hero, toSteal); // COOP-HOOK: the victim's quickslots
 			}
 			Item.updateQuickslot();
 
@@ -198,8 +199,7 @@ public class Thief extends Mob {
 		@Override
 		protected void escaped() {
 			if (item != null
-					&& !Dungeon.level.heroFOV[pos]
-					&& Dungeon.level.distance(Dungeon.hero.pos, pos) >= 6) {
+					&& CoopMobs.escapedFromHeroes(pos, 6)) { // COOP-HOOK: away from every hero
 
 				int count = 32;
 				int newPos;
@@ -208,7 +208,7 @@ public class Thief extends Mob {
 					if (count-- <= 0) {
 						break;
 					}
-				} while (newPos == -1 || Dungeon.level.heroFOV[newPos] || Dungeon.level.distance(newPos, pos) < (count/3));
+				} while (newPos == -1 || !CoopMobs.unseen(newPos) || Dungeon.level.distance(newPos, pos) < (count/3)); // COOP-HOOK: unseen by every hero
 
 				if (newPos != -1) {
 

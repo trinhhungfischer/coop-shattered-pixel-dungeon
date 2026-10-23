@@ -7,6 +7,9 @@ include ':android'
 include ':ios'
 include ':desktop'
 
+//coop: headless simulation tests (no window), run with gradlew coop-tests:coopSim
+include ':coop-tests'
+
 //service modules
 include ':services'
     //updates

@@ -35,6 +35,7 @@ import com.shatteredpixel.shatteredpixeldungeon.items.food.MysteryMeat;
 import com.shatteredpixel.shatteredpixeldungeon.mechanics.Ballistica;
 import com.shatteredpixel.shatteredpixeldungeon.scenes.GameScene;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.SpinnerSprite;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopMobs;
 import com.watabou.utils.Bundle;
 import com.watabou.utils.PathFinder;
 import com.watabou.utils.Random;
@@ -198,8 +199,8 @@ public class Spinner extends Mob {
 			
 			webCoolDown = 10;
 
-			if (Dungeon.level.heroFOV[enemy.pos]){
-				Dungeon.hero.interrupt();
+			if (CoopMobs.seen(enemy.pos)){ // COOP-HOOK: every hero that sees it
+				CoopMobs.interruptWatchers(enemy.pos);
 			}
 		}
 		next();

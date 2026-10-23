@@ -45,6 +45,7 @@ import com.shatteredpixel.shatteredpixeldungeon.scenes.GameScene;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.MobSprite;
 import com.shatteredpixel.shatteredpixeldungeon.ui.HeroIcon;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopAllies;
 import com.watabou.noosa.TextureFilm;
 import com.watabou.utils.Bundle;
 import com.watabou.utils.GameMath;
@@ -57,7 +58,7 @@ public class SpiritHawk extends ArmorAbility {
 
 	@Override
 	public String targetingPrompt() {
-		if (getHawk() == null) {
+		if (getHawk(Dungeon.hero) == null) { // COOP-HOOK: the active hero's own hawk
 			return super.targetingPrompt();
 		} else {
 			return Messages.get(this, "prompt");
@@ -75,7 +76,7 @@ public class SpiritHawk extends ArmorAbility {
 
 	@Override
 	public float chargeUse(Hero hero) {
-		if (getHawk() == null) {
+		if (getHawk(hero) == null) { // COOP-HOOK
 			return super.chargeUse(hero);
 		} else {
 			return 0;
@@ -84,7 +85,7 @@ public class SpiritHawk extends ArmorAbility {
 
 	@Override
 	protected void activate(ClassArmor armor, Hero hero, Integer target) {
-		HawkAlly ally = getHawk();
+		HawkAlly ally = getHawk(hero); // COOP-HOOK
 
 		if (ally != null){
 			if (target == null){
@@ -133,9 +134,9 @@ public class SpiritHawk extends ArmorAbility {
 		return new Talent[]{Talent.EAGLE_EYE, Talent.GO_FOR_THE_EYES, Talent.SWIFT_SPIRIT, Talent.HEROIC_ENERGY};
 	}
 
-	private static HawkAlly getHawk(){
+	private static HawkAlly getHawk( Hero hero ){
 		for (Char ch : Actor.chars()){
-			if (ch instanceof HawkAlly){
+			if (ch instanceof HawkAlly && CoopAllies.ownedBy(ch, hero)){ // COOP-HOOK: one hawk per huntress
 				return (HawkAlly) ch;
 			}
 		}
@@ -174,8 +175,9 @@ public class SpiritHawk extends ArmorAbility {
 
 		@Override
 		public int defenseSkill(Char enemy) {
-			if (Dungeon.hero.hasTalent(Talent.SWIFT_SPIRIT) &&
-					dodgesUsed < 2*Dungeon.hero.pointsInTalent(Talent.SWIFT_SPIRIT)) {
+			Hero owner = CoopAllies.summoner(this); // COOP-HOOK: the summoner's talents (was Dungeon.hero)
+			if (owner.hasTalent(Talent.SWIFT_SPIRIT) &&
+					dodgesUsed < 2*owner.pointsInTalent(Talent.SWIFT_SPIRIT)) {
 				dodgesUsed++;
 				return Char.INFINITE_EVASION;
 			}
@@ -190,7 +192,7 @@ public class SpiritHawk extends ArmorAbility {
 		@Override
 		public int attackProc(Char enemy, int damage) {
 			damage = super.attackProc( enemy, damage );
-			switch (Dungeon.hero.pointsInTalent(Talent.GO_FOR_THE_EYES)){
+			switch (CoopAllies.summoner(this).pointsInTalent(Talent.GO_FOR_THE_EYES)){ // COOP-HOOK
 				case 1:
 					Buff.prolong( enemy, Blindness.class, 2);
 					break;
@@ -216,11 +218,12 @@ public class SpiritHawk extends ArmorAbility {
 		protected boolean act() {
 			if (timeRemaining <= 0){
 				die(null);
-				Dungeon.hero.interrupt();
+				CoopAllies.summoner(this).interrupt(); // COOP-HOOK
 				return true;
 			}
-			viewDistance = 6+Dungeon.hero.pointsInTalent(Talent.EAGLE_EYE);
-			baseSpeed = 2f + Dungeon.hero.pointsInTalent(Talent.SWIFT_SPIRIT)/2f;
+			Hero owner = CoopAllies.summoner(this); // COOP-HOOK: the summoner's talents (was Dungeon.hero)
+			viewDistance = 6+owner.pointsInTalent(Talent.EAGLE_EYE);
+			baseSpeed = 2f + owner.pointsInTalent(Talent.SWIFT_SPIRIT)/2f;
 			boolean result = super.act();
 			Dungeon.level.updateFieldOfView( this, fieldOfView );
 			GameScene.updateFog(pos, viewDistance+(int)Math.ceil(speed()));
@@ -269,8 +272,9 @@ public class SpiritHawk extends ArmorAbility {
 			String message = Messages.get(this, "desc", (int)timeRemaining);
 			if (Actor.chars().contains(this)){
 				message += "\n\n" + Messages.get(this, "desc_remaining", (int)timeRemaining);
-				if (dodgesUsed < 2*Dungeon.hero.pointsInTalent(Talent.SWIFT_SPIRIT)){
-					message += "\n" + Messages.get(this, "desc_dodges", (2*Dungeon.hero.pointsInTalent(Talent.SWIFT_SPIRIT) - dodgesUsed));
+				Hero owner = CoopAllies.summoner(this); // COOP-HOOK
+				if (dodgesUsed < 2*owner.pointsInTalent(Talent.SWIFT_SPIRIT)){
+					message += "\n" + Messages.get(this, "desc_dodges", (2*owner.pointsInTalent(Talent.SWIFT_SPIRIT) - dodgesUsed));
 				}
 			}
 			return message;

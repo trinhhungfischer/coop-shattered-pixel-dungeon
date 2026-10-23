@@ -48,6 +48,8 @@ import com.shatteredpixel.shatteredpixeldungeon.sprites.MirrorSprite;
 import com.shatteredpixel.shatteredpixeldungeon.ui.HeroIcon;
 import com.shatteredpixel.shatteredpixeldungeon.ui.TargetHealthIndicator;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopAllies;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopVision;
 import com.watabou.noosa.audio.Sample;
 import com.watabou.noosa.tweeners.AlphaTweener;
 import com.watabou.noosa.tweeners.Delayer;
@@ -89,7 +91,7 @@ public class Feint extends ArmorAbility {
 			return;
 		}
 
-		if (Dungeon.hero.rooted){
+		if (hero.rooted){ // COOP-HOOK: was Dungeon.hero
 			PixelScene.shake( 1, 1f );
 			GLog.w(Messages.get(this, "bad_location"));
 			return;
@@ -118,6 +120,7 @@ public class Feint extends ArmorAbility {
 
 		AfterImage image = new AfterImage();
 		image.pos = hero.pos;
+		CoopVision.setOwner(image, hero); // COOP-HOOK: remember the duelist
 		GameScene.add(image);
 		image.syncToHero(hero);
 
@@ -215,15 +218,16 @@ public class Feint extends ArmorAbility {
 				}
 				Buff.affect(enemy, FeintConfusion.class, 1);
 				if (enemy.sprite != null) enemy.sprite.showLost();
-				if (Dungeon.hero.hasTalent(Talent.FEIGNED_RETREAT)) {
-					Buff.prolong(Dungeon.hero, Haste.class, 2f * Dungeon.hero.pointsInTalent(Talent.FEIGNED_RETREAT));
+				Hero owner = CoopAllies.summoner(this); // COOP-HOOK: the duelist who made the image (was Dungeon.hero)
+				if (owner.hasTalent(Talent.FEIGNED_RETREAT)) {
+					Buff.prolong(owner, Haste.class, 2f * owner.pointsInTalent(Talent.FEIGNED_RETREAT));
 				}
-				if (Dungeon.hero.hasTalent(Talent.EXPOSE_WEAKNESS)) {
-					Buff.prolong(enemy, Vulnerable.class, 2f * Dungeon.hero.pointsInTalent(Talent.EXPOSE_WEAKNESS));
-					Buff.prolong(enemy, Weakness.class, 2f * Dungeon.hero.pointsInTalent(Talent.EXPOSE_WEAKNESS));
+				if (owner.hasTalent(Talent.EXPOSE_WEAKNESS)) {
+					Buff.prolong(enemy, Vulnerable.class, 2f * owner.pointsInTalent(Talent.EXPOSE_WEAKNESS));
+					Buff.prolong(enemy, Weakness.class, 2f * owner.pointsInTalent(Talent.EXPOSE_WEAKNESS));
 				}
-				if (Dungeon.hero.hasTalent(Talent.COUNTER_ABILITY)) {
-					Buff.prolong(Dungeon.hero, Talent.CounterAbilityTacker.class, 3f);
+				if (owner.hasTalent(Talent.COUNTER_ABILITY)) {
+					Buff.prolong(owner, Talent.CounterAbilityTacker.class, 3f);
 				}
 			}
 			return 0;

@@ -31,6 +31,8 @@ import com.shatteredpixel.shatteredpixeldungeon.items.Item;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.GnollExileSprite;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCombat;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopVision;
 import com.watabou.utils.BArray;
 import com.watabou.utils.Bundle;
 import com.watabou.utils.PathFinder;
@@ -156,7 +158,7 @@ public class GnollExile extends Gnoll {
 				}
 			}
 
-			if (fieldOfView[Dungeon.hero.pos] && Dungeon.level.heroFOV[pos]){
+			if (fieldOfView[CoopCombat.focusHero(pos).pos] && CoopVision.seenByAnyHero(Dungeon.level, pos)){ // COOP-HOOK: closest hero
 				if (seenNotifyCooldown <= 0){
 					GLog.p(Messages.get(GnollExile.class, "seen_passive"));
 				}

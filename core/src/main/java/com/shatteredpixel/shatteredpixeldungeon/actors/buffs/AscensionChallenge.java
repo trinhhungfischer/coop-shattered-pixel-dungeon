@@ -62,6 +62,7 @@ import com.shatteredpixel.shatteredpixeldungeon.levels.Terrain;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
 import com.shatteredpixel.shatteredpixeldungeon.ui.BuffIndicator;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopDeaths;
 import com.watabou.noosa.Image;
 import com.watabou.utils.Bundle;
 
@@ -332,10 +333,10 @@ public class AscensionChallenge extends Buff {
 				target.damage((int)damageInc, this);
 				damageInc -= (int)damageInc;
 
-				if (target == Dungeon.hero && !target.isAlive()){
+				if (CoopDeaths.heroDied(target)){ // COOP-HOOK: any party hero
 					Badges.validateDeathFromFriendlyMagic();
-					GLog.n(Messages.get(this, "on_kill"));
-					Dungeon.fail(Amulet.class);
+					CoopDeaths.log(target, Messages.get(this, "on_kill"));
+					CoopDeaths.fail(target, Amulet.class);
 				}
 			}
 		} else {

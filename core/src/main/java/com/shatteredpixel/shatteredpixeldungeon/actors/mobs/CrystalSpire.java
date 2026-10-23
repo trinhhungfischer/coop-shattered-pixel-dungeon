@@ -33,6 +33,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Haste;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Invisibility;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Paralysis;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.Blacksmith;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopBosses;
 import com.shatteredpixel.shatteredpixeldungeon.effects.Pushing;
 import com.shatteredpixel.shatteredpixeldungeon.effects.Splash;
 import com.shatteredpixel.shatteredpixeldungeon.items.quest.Pickaxe;
@@ -98,7 +99,7 @@ public class CrystalSpire extends Mob {
 		sprite.hideLost();
 
 		//mob logic
-		enemy = Dungeon.hero;
+		enemy = CoopBosses.spireTarget(fieldOfView, pos); // COOP-HOOK: was Dungeon.hero
 
 		//crystal can still track an invisible hero
 		enemySeen = enemy.isAlive() && fieldOfView[enemy.pos];
@@ -131,7 +132,7 @@ public class CrystalSpire extends Mob {
 					if (ch instanceof CrystalGuardian) {
 						dmg += 12; //18-27 damage
 						Buff.prolong(ch, Cripple.class, 30f);
-					} else if (ch == Dungeon.hero){
+					} else if (CoopBosses.isHero(ch)){ // COOP-HOOK: was ch == Dungeon.hero
 						Statistics.questScores[2] -= 100;
 					}
 					ch.damage(dmg, new SpireSpike());
@@ -141,7 +142,7 @@ public class CrystalSpire extends Mob {
 					if (ch instanceof CrystalGuardian){
 						for (int j : PathFinder.NEIGHBOURS8){
 							if (!Dungeon.level.solid[i+j] && Actor.findChar(i+j) == null &&
-									Dungeon.level.trueDistance(i+j, Dungeon.hero.pos) > Dungeon.level.trueDistance(movePos, Dungeon.hero.pos)){
+									Dungeon.level.trueDistance(i+j, enemy.pos) > Dungeon.level.trueDistance(movePos, enemy.pos)){ // COOP-HOOK: was Dungeon.hero.pos
 								movePos = i+j;
 							}
 						}
@@ -160,7 +161,7 @@ public class CrystalSpire extends Mob {
 							ch.pos = movePos;
 							Dungeon.level.occupyCell(ch);
 						}
-					} else if (ch == Dungeon.hero){
+					} else if (CoopBosses.isHero(ch)){ // COOP-HOOK: was ch == Dungeon.hero
 						GLog.n( Messages.capitalize(Messages.get(Char.class, "kill", name())) );
 						Dungeon.fail(this);
 					}
@@ -191,7 +192,7 @@ public class CrystalSpire extends Mob {
 					lineAttack();
 				}
 
-				float delay = GameMath.gate(TICK, (int)Math.ceil(Dungeon.hero.cooldown()), 3*TICK);
+				float delay = GameMath.gate(TICK, (int)Math.ceil(enemy.cooldown()), 3*TICK); // COOP-HOOK: was Dungeon.hero
 
 				for (int i : targetedCells.get(0)){
 					GameScene.targetedCell(i, delay);
@@ -200,7 +201,7 @@ public class CrystalSpire extends Mob {
 				abilityCooldown += ABILITY_CD;
 
 				spend(delay);
-				Dungeon.hero.interrupt();
+				CoopBosses.interruptAll(); // COOP-HOOK: was Dungeon.hero.interrupt()
 			} else {
 				abilityCooldown -= 1;
 				spend(TICK);
@@ -217,7 +218,7 @@ public class CrystalSpire extends Mob {
 		targetedCells.clear();
 
 		ArrayList<Integer> aoeCells = new ArrayList<>();
-		aoeCells.add(Dungeon.hero.pos);
+		aoeCells.add(enemy.pos); // COOP-HOOK: was Dungeon.hero.pos
 		aoeCells.addAll(spreadDiamondAOE(aoeCells));
 		targetedCells.add(new ArrayList<>(aoeCells));
 
@@ -248,7 +249,7 @@ public class CrystalSpire extends Mob {
 		targetedCells.clear();
 
 		ArrayList<Integer> lineCells = new ArrayList<>();
-		Ballistica aim = new Ballistica(pos, Dungeon.hero.pos, Ballistica.WONT_STOP);
+		Ballistica aim = new Ballistica(pos, enemy.pos, Ballistica.WONT_STOP); // COOP-HOOK: was Dungeon.hero.pos
 		for (int i : aim.subPath(1, 7)){
 			if (!Dungeon.level.solid[i] || Dungeon.level.map[i] == Terrain.MINE_CRYSTAL){
 				lineCells.add(i);

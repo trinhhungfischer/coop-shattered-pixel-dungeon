@@ -41,6 +41,8 @@ import com.shatteredpixel.shatteredpixeldungeon.effects.Beam;
 import com.shatteredpixel.shatteredpixeldungeon.effects.CellEmitter;
 import com.shatteredpixel.shatteredpixeldungeon.effects.Pushing;
 import com.shatteredpixel.shatteredpixeldungeon.effects.Speck;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopBosses;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopLoot;
 import com.shatteredpixel.shatteredpixeldungeon.effects.particles.ElmoParticle;
 import com.shatteredpixel.shatteredpixeldungeon.effects.particles.ShadowParticle;
 import com.shatteredpixel.shatteredpixeldungeon.effects.particles.SparkParticle;
@@ -455,7 +457,7 @@ public class DwarfKing extends Mob {
 	@Override
 	public void damage(int dmg, Object src) {
 		//hero counts as unarmed if they aren't attacking with a weapon and aren't benefiting from force
-		if (src == Dungeon.hero && (!RingOfForce.fightingUnarmed(Dungeon.hero) || Dungeon.hero.buff(RingOfForce.Force.class) != null)){
+		if (CoopBosses.heroHitArmed(src)){ // COOP-HOOK: was src == Dungeon.hero && (!RingOfForce.fightingUnarmed(Dungeon.hero) || Dungeon.hero.buff(RingOfForce.Force.class) != null)
 			Statistics.qualifiedForBossChallengeBadge = false;
 		//Corrosion, corruption, and regrowth do no direct damage and so have their own custom logic
 		//Transfusion damages DK and so doesn't need custom logic
@@ -521,7 +523,7 @@ public class DwarfKing extends Mob {
 			summonsMade = 1; //monk/warlock on 3rd summon
 			sprite.centerEmitter().start( Speck.factory( Speck.SCREAM ), 0.4f, 2 );
 			Sample.INSTANCE.play( Assets.Sounds.CHALLENGE );
-			yell(  Messages.get(this, "enraged", Dungeon.hero.name()) );
+			yell(  Messages.get(this, "enraged", CoopBosses.target(enemy, pos).name()) ); // COOP-HOOK: was Dungeon.hero.name()
 			BossHealthBar.bleed(true);
 			Game.runOnRenderThread(new Callback() {
 				@Override
@@ -564,6 +566,8 @@ public class DwarfKing extends Mob {
 		} else {
 			Dungeon.level.drop(new KingsCrown(), pos).sprite.drop();
 		}
+		//COOP-HOOK: every hero can loot the crown once
+		CoopLoot.tagForParty( Dungeon.level.heaps.get(pos == CityBossLevel.throne ? pos + Dungeon.level.width() : pos), KingsCrown.class );
 
 		Badges.validateBossSlain();
 		if (Statistics.qualifiedForBossChallengeBadge){
@@ -579,15 +583,10 @@ public class DwarfKing extends Mob {
 		}
 		Bestiary.skipCountingEncounters = false;
 
-		LloydsBeacon beacon = Dungeon.hero.belongings.getItem(LloydsBeacon.class);
-		if (beacon != null) {
-			beacon.upgrade();
-		}
+		CoopBosses.upgradeBeacons(); // COOP-HOOK: was Dungeon.hero's beacon only
 
 		//cleanses degrade that may have been applied by a DK warlock, mainly for convenience
-		if (Dungeon.hero.buff(Degrade.class) != null){
-			Dungeon.hero.buff(Degrade.class).detach();
-		}
+		CoopBosses.detachFromParty(Degrade.class); // COOP-HOOK: was Dungeon.hero only
 
 		yell( Messages.get(this, "defeated") );
 	}
@@ -629,7 +628,7 @@ public class DwarfKing extends Mob {
 
 		@Override
 		protected void zap() {
-			if (enemy == Dungeon.hero){
+			if (CoopBosses.isHero(enemy)){ // COOP-HOOK: was enemy == Dungeon.hero
 				Statistics.bossScores[3] -= 400;
 			}
 			super.zap();
@@ -713,7 +712,7 @@ public class DwarfKing extends Mob {
 							target.damage(target.HT/12, new KingDamager());
 						}
 					}
-					if (!ch.isAlive() && ch == Dungeon.hero) {
+					if (!ch.isAlive() && CoopBosses.isHero(ch)) { // COOP-HOOK: was ch == Dungeon.hero
 						Dungeon.fail(DwarfKing.class);
 						GLog.n( Messages.capitalize(Messages.get(Char.class, "kill", Messages.get(DwarfKing.class, "name"))));
 					}

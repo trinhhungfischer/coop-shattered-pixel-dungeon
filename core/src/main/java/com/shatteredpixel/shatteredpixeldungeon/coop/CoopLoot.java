@@ -122,6 +122,19 @@ public class CoopLoot {
 				|| c == TrinketCatalyst.class;
 	}
 
+	//boss rewards (Tengu's mask, the King's crown): one drop that every hero can loot once,
+	//so each hero can get its subclass / armor ability. Tags the first item of that class.
+	public static void tagForParty( Heap heap, Class<? extends Item> cls ){
+		if (!Coop.active() || heap == null) return;
+		for (Item i : heap.items){
+			if (i.getClass() == cls){
+				if (heap.coopLoot == null) heap.coopLoot = new Record();
+				if (!heap.coopLoot.looted.containsKey(i)) heap.coopLoot.put(i, 0);
+				return;
+			}
+		}
+	}
+
 	public static boolean isTagged( Heap heap, Item item ){
 		return heap.coopLoot != null && heap.coopLoot.looted.containsKey(item);
 	}

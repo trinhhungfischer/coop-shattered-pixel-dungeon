@@ -29,6 +29,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Talent;
 import com.shatteredpixel.shatteredpixeldungeon.items.armor.Armor;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
 import com.shatteredpixel.shatteredpixeldungeon.ui.BuffIndicator;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCombat;
 import com.watabou.noosa.Image;
 import com.watabou.utils.Bundle;
 import com.watabou.utils.Random;
@@ -101,9 +102,9 @@ public class HoldFast extends Buff {
 	@Override
 	public String desc() {
 		return Messages.get(this, "desc",
-				Dungeon.hero.pointsInTalent(Talent.HOLD_FAST),
-				2*Dungeon.hero.pointsInTalent(Talent.HOLD_FAST),
-				25 + 25*Dungeon.hero.pointsInTalent(Talent.HOLD_FAST));
+				CoopCombat.heroOf(target).pointsInTalent(Talent.HOLD_FAST), // COOP-HOOK
+				2*CoopCombat.heroOf(target).pointsInTalent(Talent.HOLD_FAST), // COOP-HOOK
+				25 + 25*CoopCombat.heroOf(target).pointsInTalent(Talent.HOLD_FAST)); // COOP-HOOK
 	}
 
 	private static final String POS = "pos";

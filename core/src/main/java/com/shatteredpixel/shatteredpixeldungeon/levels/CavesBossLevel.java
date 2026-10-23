@@ -35,6 +35,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.DM300;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Pylon;
 import com.shatteredpixel.shatteredpixeldungeon.effects.BlobEmitter;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopBosses;
 import com.shatteredpixel.shatteredpixeldungeon.effects.CellEmitter;
 import com.shatteredpixel.shatteredpixeldungeon.effects.Speck;
 import com.shatteredpixel.shatteredpixeldungeon.effects.particles.BlastParticle;
@@ -282,7 +283,7 @@ public class CavesBossLevel extends Level {
 	public void occupyCell(Char ch) {
 		//seal the level when the hero moves near to a pylon, the level isn't already sealed, and the gate hasn't been destroyed
 		int gatePos = pointToCell(new Point(gate.left, gate.top));
-		if (ch == Dungeon.hero && !locked && solid[gatePos]){
+		if (CoopBosses.isHero(ch) && !locked && solid[gatePos]){ // COOP-HOOK: was ch == Dungeon.hero
 			for (int pos : pylonPositions){
 				if (Dungeon.level.distance(ch.pos, pos) <= 3){
 					seal();
@@ -392,7 +393,8 @@ public class CavesBossLevel extends Level {
 		} else if (!pylons.isEmpty()) {
 			Pylon closest = null;
 			for (Pylon p : pylons){
-				if (closest == null || trueDistance(p.pos, Dungeon.hero.pos) < trueDistance(closest.pos, Dungeon.hero.pos)){
+				//COOP-HOOK: was trueDistance to Dungeon.hero, coop uses the nearest hero
+				if (closest == null || CoopBosses.partyTrueDistance(this, p.pos) < CoopBosses.partyTrueDistance(this, closest.pos)){
 					closest = p;
 				}
 			}
@@ -914,7 +916,7 @@ public class CavesBossLevel extends Level {
 							ch.damage( Random.NormalIntRange(6, 12), new Electricity());
 							ch.sprite.flash();
 
-							if (ch == Dungeon.hero){
+							if (CoopBosses.isHero(ch)){ // COOP-HOOK: was ch == Dungeon.hero
 								if (energySourceSprite != null && energySourceSprite instanceof PylonSprite){
 									//took damage while DM-300 was supercharged
 									Statistics.qualifiedForBossChallengeBadge = false;

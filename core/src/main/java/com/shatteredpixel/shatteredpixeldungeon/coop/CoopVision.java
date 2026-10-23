@@ -26,6 +26,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.levels.Level;
 import com.shatteredpixel.shatteredpixeldungeon.scenes.GameScene;
+import com.watabou.utils.BArray;
 import com.watabou.utils.Bundle;
 
 import java.util.HashMap;
@@ -189,12 +190,26 @@ public class CoopVision implements Coop.Listener {
 		}
 	}
 
-	//teammates are only visible when the active hero can see them, like any other character
+	//clears the other heroes' explored maps of this level (a boss level rebuilt its map)
+	public static void clearExplored( Level level ){
+		State s = states.get(level);
+		if (s == null || s.visited == null) return;
+		for (int i = 0; i < s.visited.length; i++){
+			if (i == s.owner) continue;
+			if (s.visited[i] != null) BArray.setFalse( s.visited[i] );
+			if (s.mapped[i] != null) BArray.setFalse( s.mapped[i] );
+		}
+	}
+
+	//teammates are only visible when the active hero can see them, like any other character.
+	//The active hero is always visible: it may have been hidden while it was someone's teammate.
 	public static void updateTeammateSprites(){
 		if (!Coop.active() || Dungeon.level == null) return;
 		for (Hero h : Coop.aliveHeroes()){
-			if (h == Dungeon.hero || h.sprite == null) continue;
-			if (h.pos >= 0 && h.pos < Dungeon.level.length()) {
+			if (h.sprite == null) continue;
+			if (h == Dungeon.hero) {
+				h.sprite.visible = true;
+			} else if (h.pos >= 0 && h.pos < Dungeon.level.length()) {
 				h.sprite.visible = Dungeon.level.heroFOV[h.pos];
 			}
 		}

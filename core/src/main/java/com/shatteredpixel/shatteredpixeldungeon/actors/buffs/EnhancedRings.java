@@ -26,6 +26,8 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Talent;
 import com.shatteredpixel.shatteredpixeldungeon.ui.BuffIndicator;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCombat;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore;
 import com.watabou.noosa.Image;
 
 public class EnhancedRings extends FlavourBuff {
@@ -37,7 +39,7 @@ public class EnhancedRings extends FlavourBuff {
 	@Override
 	public boolean attachTo(Char target) {
 		if (super.attachTo(target)){
-			if (target == Dungeon.hero) ((Hero) target).updateHT(false);
+			if (CoopCore.isPartyHero(target)) ((Hero) target).updateHT(false); // COOP-HOOK
 			return true;
 		}
 		return false;
@@ -46,7 +48,7 @@ public class EnhancedRings extends FlavourBuff {
 	@Override
 	public void detach() {
 		super.detach();
-		if (target == Dungeon.hero) ((Hero) target).updateHT(false);
+		if (CoopCore.isPartyHero(target)) ((Hero) target).updateHT(false); // COOP-HOOK
 	}
 
 	@Override
@@ -61,7 +63,7 @@ public class EnhancedRings extends FlavourBuff {
 
 	@Override
 	public float iconFadePercent() {
-		float max = 3*Dungeon.hero.pointsInTalent(Talent.ENHANCED_RINGS);
+		float max = 3*CoopCombat.heroOf(target).pointsInTalent(Talent.ENHANCED_RINGS); // COOP-HOOK
 		return Math.max(0, (max-visualcooldown()) / max);
 	}
 

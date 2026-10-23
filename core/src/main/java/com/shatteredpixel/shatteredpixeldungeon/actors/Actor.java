@@ -362,6 +362,12 @@ public abstract class Actor implements Bundlable {
 		}
 	}
 	
+	//COOP-HOOK: a hero that dies during its own turn (while waiting on an animation or input)
+	// never calls next() again, so the actor thread would wait on it forever
+	public static synchronized void releaseIfCurrent( Actor actor ) {
+		if (current == actor) current = null;
+	}
+
 	public static synchronized void remove( Actor actor ) {
 		
 		if (actor != null) {

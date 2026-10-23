@@ -55,6 +55,8 @@ import com.shatteredpixel.shatteredpixeldungeon.sprites.MobSprite;
 import com.shatteredpixel.shatteredpixeldungeon.ui.BuffIndicator;
 import com.shatteredpixel.shatteredpixeldungeon.ui.HeroIcon;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopAllies;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore;
 import com.watabou.noosa.TextureFilm;
 import com.watabou.noosa.audio.Sample;
 import com.watabou.utils.Bundle;
@@ -64,7 +66,7 @@ public class PowerOfMany extends ArmorAbility {
 
 	@Override
 	public float chargeUse(Hero hero) {
-		if (getPoweredAlly() instanceof LightAlly){
+		if (getPoweredAlly(hero) instanceof LightAlly){ // COOP-HOOK: this cleric's ally
 			return 0;
 		}
 		return super.chargeUse(hero);
@@ -72,7 +74,7 @@ public class PowerOfMany extends ArmorAbility {
 
 	@Override
 	public String targetingPrompt() {
-		Char ally = getPoweredAlly();
+		Char ally = getPoweredAlly(Dungeon.hero); // COOP-HOOK: the active cleric's ally
 
 		boolean allyExists = ally != null;
 
@@ -106,7 +108,7 @@ public class PowerOfMany extends ArmorAbility {
 	@Override
 	protected void activate(ClassArmor armor, Hero hero, Integer target) {
 
-		Char ally = getPoweredAlly();
+		Char ally = getPoweredAlly(hero); // COOP-HOOK: this cleric's ally
 
 		boolean allyExists = ally != null;
 
@@ -147,7 +149,7 @@ public class PowerOfMany extends ArmorAbility {
 
 			Char ch = Actor.findChar(target);
 			if (ch != null){
-				if (ch.alignment != Char.Alignment.ALLY || ch == Dungeon.hero){
+				if (ch.alignment != Char.Alignment.ALLY || CoopCore.isPartyHero(ch)){ // COOP-HOOK: no party heroes
 					GLog.w(Messages.get(this, "only_allies"));
 					return;
 				}
@@ -191,9 +193,23 @@ public class PowerOfMany extends ArmorAbility {
 		return new Talent[]{Talent.BEAMING_RAY, Talent.LIFE_LINK, Talent.STASIS, Talent.HEROIC_ENERGY};
 	}
 
+	//COOP-HOOK: in coop this prefers the active hero's own empowered ally (callers are spells cast
+	//by Dungeon.hero), then any empowered ally. Solo: unchanged.
 	public static Char getPoweredAlly(){
+		Char own = getPoweredAlly(Dungeon.hero);
+		if (own != null) return own;
 		for (Char ch : Actor.chars()){
 			if (ch.buff(PowerBuff.class) != null){
+				return ch;
+			}
+		}
+		return null;
+	}
+
+	//the empowered ally that belongs to hero (see CoopAllies.ownedBy). Solo: any empowered ally.
+	public static Char getPoweredAlly( Hero hero ){
+		for (Char ch : Actor.chars()){
+			if (ch.buff(PowerBuff.class) != null && CoopAllies.ownedBy(ch, hero)){
 				return ch;
 			}
 		}
@@ -322,7 +338,7 @@ public class PowerOfMany extends ArmorAbility {
 			//moves 2 tiles at a time when returning to the hero
 			if (state == WANDERING
 					&& defendingPos == -1
-					&& Dungeon.level.distance(pos, Dungeon.hero.pos) > 1){
+					&& Dungeon.level.distance(pos, CoopAllies.leader(this).pos) > 1){ // COOP-HOOK
 				speed *= 2;
 			}
 

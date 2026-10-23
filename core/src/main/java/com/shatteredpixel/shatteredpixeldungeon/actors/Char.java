@@ -97,7 +97,9 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Tengu;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.MirrorImage;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.PrismaticImage;
 import com.shatteredpixel.shatteredpixeldungeon.coop.Coop;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopAllies;
 import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCombat;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore;
 import com.shatteredpixel.shatteredpixeldungeon.effects.FloatingText;
 import com.shatteredpixel.shatteredpixeldungeon.effects.Splash;
 import com.shatteredpixel.shatteredpixeldungeon.effects.particles.ShadowParticle;
@@ -414,8 +416,8 @@ public abstract class Char extends Actor {
 			Preparation prep = buff(Preparation.class);
 			if (prep != null){
 				dmg = prep.damageRoll(this);
-				if (this == Dungeon.hero && Dungeon.hero.hasTalent(Talent.BOUNTY_HUNTER)) {
-					Buff.affect(Dungeon.hero, Talent.BountyHunterTracker.class, 0.0f);
+				if (CoopCore.isPartyHero(this) && ((Hero)this).hasTalent(Talent.BOUNTY_HUNTER)) { // COOP-HOOK: attacker's own talent
+					Buff.affect(this, Talent.BountyHunterTracker.class, 0.0f);
 				}
 			} else {
 				dmg = damageRoll();
@@ -428,11 +430,12 @@ public abstract class Char extends Actor {
 
 			if (enemy.buff(GuidingLight.Illuminated.class) != null){
 				enemy.buff(GuidingLight.Illuminated.class).detach();
-				if (this == Dungeon.hero && Dungeon.hero.hasTalent(Talent.SEARING_LIGHT)){
-					dmg += 1 + 2*Dungeon.hero.pointsInTalent(Talent.SEARING_LIGHT);
+				if (CoopAllies.searingLight(this)){ // COOP-HOOK: attacker's own talent
+					dmg += 1 + 2*((Hero)this).pointsInTalent(Talent.SEARING_LIGHT);
 				}
-				if (this != Dungeon.hero && Dungeon.hero.subClass == HeroSubClass.PRIEST){
-					enemy.damage(5+Dungeon.hero.lvl, GuidingLight.INSTANCE);
+				Hero priest = CoopAllies.priestFor(this); // COOP-HOOK: was Dungeon.hero if priest
+				if (priest != null){
+					enemy.damage(5+priest.lvl, GuidingLight.INSTANCE);
 				}
 			}
 
@@ -446,7 +449,7 @@ public abstract class Char extends Actor {
 			if (buff( PowerOfMany.PowerBuff.class) != null){
 				if (buff( BeamingRay.BeamingRayBoost.class) != null
 					&& buff( BeamingRay.BeamingRayBoost.class).object == enemy.id()){
-					dmg *= 1.3f + 0.05f*Dungeon.hero.pointsInTalent(Talent.BEAMING_RAY);
+					dmg *= 1.3f + 0.05f*CoopAllies.summoner(this).pointsInTalent(Talent.BEAMING_RAY); // COOP-HOOK: caster's talent
 				} else {
 					dmg *= 1.25f;
 				}
@@ -472,10 +475,9 @@ public abstract class Char extends Actor {
 				dmg *= 0.67f;
 			}
 
-			if (Dungeon.hero.alignment == enemy.alignment
-					&& Dungeon.hero.buff(AuraOfProtection.AuraBuff.class) != null
-					&& (Dungeon.level.distance(enemy.pos, Dungeon.hero.pos) <= 2 || enemy.buff(LifeLinkSpell.LifeLinkSpellBuff.class) != null)){
-				dmg *= 0.9f - 0.1f*Dungeon.hero.pointsInTalent(Talent.AURA_OF_PROTECTION);
+			Hero aura = CoopAllies.auraHero(enemy); // COOP-HOOK: the hero whose aura covers enemy (was Dungeon.hero)
+			if (aura != null){
+				dmg *= 0.9f - 0.1f*aura.pointsInTalent(Talent.AURA_OF_PROTECTION);
 			}
 
 			if (enemy.buff(MonkEnergy.MonkAbility.Meditate.MeditateResistance.class) != null){
@@ -658,11 +660,11 @@ public abstract class Char extends Actor {
 			acuRoll *= buff.evasionAndAccuracyFactor();
 		}
 		acuRoll *= AscensionChallenge.statModifier(attacker);
-		if (Dungeon.hero.heroClass != HeroClass.CLERIC
-				&& Dungeon.hero.hasTalent(Talent.BLESS)
+		int blessPts = CoopAllies.blessPoints(); // COOP-HOOK: best non-cleric hero with bless (was Dungeon.hero)
+		if (blessPts > 0
 				&& attacker.alignment == Alignment.ALLY){
 			// + 3%/5%
-			acuRoll *= 1.01f + 0.02f*Dungeon.hero.pointsInTalent(Talent.BLESS);
+			acuRoll *= 1.01f + 0.02f*blessPts;
 		}
 		acuRoll *= accMulti;
 
@@ -674,11 +676,10 @@ public abstract class Char extends Actor {
 			defRoll *= buff.evasionAndAccuracyFactor();
 		}
 		defRoll *= AscensionChallenge.statModifier(defender);
-		if (Dungeon.hero.heroClass != HeroClass.CLERIC
-				&& Dungeon.hero.hasTalent(Talent.BLESS)
-				&& defender.alignment == Alignment.ALLY){
+		if (blessPts > 0
+				&& defender.alignment == Alignment.ALLY){ // COOP-HOOK
 			// + 3%/5%
-			defRoll *= 1.01f + 0.02f*Dungeon.hero.pointsInTalent(Talent.BLESS);
+			defRoll *= 1.01f + 0.02f*blessPts;
 		}
 		defRoll *= FerretTuft.evasionMultiplier();
 
@@ -736,25 +737,24 @@ public abstract class Char extends Actor {
 
 		ShieldOfLight.ShieldOfLightTracker shield = buff( ShieldOfLight.ShieldOfLightTracker.class);
 		if (shield != null && shield.object == enemy.id()){
-			int min = 1 + Dungeon.hero.pointsInTalent(Talent.SHIELD_OF_LIGHT);
+			int min = 1 + CoopAllies.summoner(this).pointsInTalent(Talent.SHIELD_OF_LIGHT); // COOP-HOOK: caster (this, or the empowered ally's cleric)
 			damage -= Random.NormalIntRange(min, 2*min);
 			damage = Math.max(damage, 0);
-		} else if (this == Dungeon.hero
-				&& Dungeon.hero.heroClass != HeroClass.CLERIC
-				&& Dungeon.hero.hasTalent(Talent.SHIELD_OF_LIGHT)
+		} else if (CoopCore.isPartyHero(this) // COOP-HOOK: the defending hero's own talent
+				&& ((Hero)this).heroClass != HeroClass.CLERIC
+				&& ((Hero)this).hasTalent(Talent.SHIELD_OF_LIGHT)
 				&& TargetHealthIndicator.instance.target() == enemy){
 			//33/50%
-			if (Random.Int(6) < 1+Dungeon.hero.pointsInTalent(Talent.SHIELD_OF_LIGHT)){
+			if (Random.Int(6) < 1+((Hero)this).pointsInTalent(Talent.SHIELD_OF_LIGHT)){
 				damage -= 1;
 			}
 		}
 
 		// hero and pris images skip this as they already benefit from hero's armor glyph proc
 		if (!(this instanceof Hero || this instanceof PrismaticImage)) {
-			if (Dungeon.hero.alignment == alignment && Dungeon.hero.belongings.armor() != null
-					&& Dungeon.hero.buff(AuraOfProtection.AuraBuff.class) != null
-					&& (Dungeon.level.distance(pos, Dungeon.hero.pos) <= 2 || buff(LifeLinkSpell.LifeLinkSpellBuff.class) != null)) {
-				damage = Dungeon.hero.belongings.armor().proc( enemy, this, damage );
+			Hero aura = CoopAllies.auraGlyphHero(this); // COOP-HOOK: the hero whose aura covers us (was Dungeon.hero)
+			if (aura != null && aura.belongings.armor() != null) {
+				damage = aura.belongings.armor().proc( enemy, this, damage );
 			}
 		}
 
@@ -764,11 +764,9 @@ public abstract class Char extends Actor {
 	//Returns the level a glyph is at for a char, or -1 if they are not benefitting from that glyph
 	//This function is needed as (unlike enchantments) many glyphs trigger in a variety of cases
 	public int glyphLevel(Class<? extends Armor.Glyph> cls){
-		if (Dungeon.hero != null && Dungeon.level != null
-				&& this != Dungeon.hero && Dungeon.hero.alignment == alignment
-				&& Dungeon.hero.buff(AuraOfProtection.AuraBuff.class) != null
-				&& (Dungeon.level.distance(pos, Dungeon.hero.pos) <= 2 || buff(LifeLinkSpell.LifeLinkSpellBuff.class) != null)) {
-			return Dungeon.hero.glyphLevel(cls);
+		Hero aura = CoopAllies.auraGlyphHero(this); // COOP-HOOK: the hero whose aura covers us (was Dungeon.hero)
+		if (aura != null) {
+			return aura.glyphLevel(cls);
 		} else {
 			return -1;
 		}
@@ -875,16 +873,15 @@ public abstract class Char extends Actor {
 
 		//if dmg is from a character we already reduced it in Char.attack
 		if (!(src instanceof Char)) {
-			if (Dungeon.hero.alignment == alignment
-					&& Dungeon.hero.buff(AuraOfProtection.AuraBuff.class) != null
-					&& (Dungeon.level.distance(pos, Dungeon.hero.pos) <= 2 || buff(LifeLinkSpell.LifeLinkSpellBuff.class) != null)) {
-				damage *= 0.9f - 0.1f*Dungeon.hero.pointsInTalent(Talent.AURA_OF_PROTECTION);
+			Hero aura = CoopAllies.auraHero(this); // COOP-HOOK: the hero whose aura covers us (was Dungeon.hero)
+			if (aura != null) {
+				damage *= 0.9f - 0.1f*aura.pointsInTalent(Talent.AURA_OF_PROTECTION);
 			}
 		}
 
 		if (buff(PowerOfMany.PowerBuff.class) != null){
 			if (buff(LifeLinkSpell.LifeLinkSpellBuff.class) != null){
-				damage *= 0.70f - 0.05f*Dungeon.hero.pointsInTalent(Talent.LIFE_LINK);
+				damage *= 0.70f - 0.05f*CoopAllies.summoner(this).pointsInTalent(Talent.LIFE_LINK); // COOP-HOOK: caster's talent
 			} else {
 				damage *= 0.75f;
 			}
@@ -1036,16 +1033,16 @@ public abstract class Char extends Actor {
 			if (src instanceof Pickaxe)                                 icon = FloatingText.PICK_DMG;
 
 			//special case for sniper when using ranged attacks
-			if (src == Dungeon.hero
-					&& Dungeon.hero.subClass == HeroSubClass.SNIPER
-					&& !Dungeon.level.adjacent(Dungeon.hero.pos, pos)
-					&& Dungeon.hero.belongings.attackingWeapon() instanceof MissileWeapon){
+			if (CoopCore.isPartyHero(src) // COOP-HOOK: any party hero (was src == Dungeon.hero)
+					&& ((Hero)src).subClass == HeroSubClass.SNIPER
+					&& !Dungeon.level.adjacent(((Hero)src).pos, pos)
+					&& ((Hero)src).belongings.attackingWeapon() instanceof MissileWeapon){
 				icon = FloatingText.PHYS_DMG_NO_BLOCK;
 			}
 
 			//special case for monk using unarmed abilities
-			if (src == Dungeon.hero
-					&& Dungeon.hero.buff(MonkEnergy.MonkAbility.UnarmedAbilityTracker.class) != null){
+			if (CoopCore.isPartyHero(src) // COOP-HOOK
+					&& ((Hero)src).buff(MonkEnergy.MonkAbility.UnarmedAbilityTracker.class) != null){
 				icon = FloatingText.PHYS_DMG_NO_BLOCK;
 			}
 

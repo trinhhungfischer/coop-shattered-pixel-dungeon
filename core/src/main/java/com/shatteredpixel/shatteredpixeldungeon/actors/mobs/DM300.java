@@ -42,6 +42,8 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Roots;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Sleep;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Slow;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Terror;
+import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopBosses;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Vertigo;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.spells.WallOfLight;
 import com.shatteredpixel.shatteredpixeldungeon.effects.FloatingText;
@@ -176,10 +178,11 @@ public class DM300 extends Mob {
 			//determine if DM can reach its enemy
 			boolean canReach;
 			if (enemy == null || !enemy.isAlive()){
-				if (Dungeon.level.adjacent(pos, Dungeon.hero.pos)){
+				//COOP-HOOK: was Dungeon.hero, coop uses the closest visible hero
+				if (Dungeon.level.adjacent(pos, CoopBosses.seekHero(pos).pos)){
 					canReach = true;
 				} else {
-					canReach = (Dungeon.findStep(this, Dungeon.hero.pos, Dungeon.level.openSpace, fieldOfView, true) != -1);
+					canReach = (Dungeon.findStep(this, CoopBosses.seekHero(pos).pos, Dungeon.level.openSpace, fieldOfView, true) != -1);
 				}
 			} else {
 				if (Dungeon.level.adjacent(pos, enemy.pos)){
@@ -190,13 +193,13 @@ public class DM300 extends Mob {
 			}
 
 			if (state != HUNTING){
-				if (Dungeon.hero.invisible <= 0 && canReach){
-					beckon(Dungeon.hero.pos);
+				if (CoopBosses.seekHero(pos).invisible <= 0 && canReach){ // COOP-HOOK: was Dungeon.hero
+					beckon(CoopBosses.seekHero(pos).pos);
 				}
 			} else {
 
-				if ((enemy == null || !enemy.isAlive()) && Dungeon.hero.invisible <= 0) {
-					enemy = Dungeon.hero;
+				if ((enemy == null || !enemy.isAlive()) && CoopBosses.seekHero(pos).invisible <= 0) { // COOP-HOOK: was Dungeon.hero
+					enemy = CoopBosses.seekHero(pos);
 				}
 
 				//more aggressive ability usage when DM can't reach its target
@@ -290,10 +293,10 @@ public class DM300 extends Mob {
 				chargeAnnounced = true;
 			}
 
-			if (Dungeon.hero.invisible <= 0){
-				beckon(Dungeon.hero.pos);
+			if (CoopBosses.seekHero(pos).invisible <= 0){ // COOP-HOOK: was Dungeon.hero
+				beckon(CoopBosses.seekHero(pos).pos);
 				state = HUNTING;
-				enemy = Dungeon.hero;
+				enemy = CoopBosses.seekHero(pos);
 			}
 
 		}
@@ -303,7 +306,7 @@ public class DM300 extends Mob {
 
 	@Override
 	public boolean attack(Char enemy, float dmgMulti, float dmgBonus, float accMulti) {
-		if (enemy == Dungeon.hero && supercharged){
+		if (CoopBosses.isHero(enemy) && supercharged){ // COOP-HOOK: was enemy == Dungeon.hero
 			Statistics.qualifiedForBossChallengeBadge = false;
 		}
 		return super.attack(enemy, dmgMulti, dmgBonus, accMulti);
@@ -313,7 +316,7 @@ public class DM300 extends Mob {
 	protected Char chooseEnemy() {
 		Char enemy = super.chooseEnemy();
 		if (supercharged && enemy == null){
-			enemy = Dungeon.hero;
+			enemy = CoopBosses.seekHero(pos); // COOP-HOOK: was Dungeon.hero
 		}
 		return enemy;
 	}
@@ -371,7 +374,7 @@ public class DM300 extends Mob {
 	}
 
 	public void ventGas( Char target ){
-		Dungeon.hero.interrupt();
+		CoopBosses.interruptAll(); // COOP-HOOK: was Dungeon.hero.interrupt()
 
 		Ballistica trajectory = new Ballistica(pos, target.pos, Ballistica.STOP_TARGET);
 
@@ -408,7 +411,7 @@ public class DM300 extends Mob {
 
 	public void dropRocks( Char target ) {
 
-		Dungeon.hero.interrupt();
+		CoopBosses.interruptAll(); // COOP-HOOK: was Dungeon.hero.interrupt()
 		final int rockCenter;
 
 		//knock back 2 tiles if adjacent
@@ -416,8 +419,8 @@ public class DM300 extends Mob {
 			int oppositeAdjacent = target.pos + (target.pos - pos);
 			Ballistica trajectory = new Ballistica(target.pos, oppositeAdjacent, Ballistica.MAGIC_BOLT);
 			WandOfBlastWave.throwChar(target, trajectory, 2, false, false, this);
-			if (target == Dungeon.hero){
-				Dungeon.hero.interrupt();
+			if (CoopBosses.isHero(target)){ // COOP-HOOK: was target == Dungeon.hero
+				((Hero)target).interrupt();
 			}
 			rockCenter = trajectory.path.get(Math.min(trajectory.dist, 2));
 
@@ -426,8 +429,8 @@ public class DM300 extends Mob {
 			int oppositeAdjacent = target.pos + (target.pos - pos);
 			Ballistica trajectory = new Ballistica(target.pos, oppositeAdjacent, Ballistica.MAGIC_BOLT);
 			WandOfBlastWave.throwChar(target, trajectory, 1, false, false, this);
-			if (target == Dungeon.hero){
-				Dungeon.hero.interrupt();
+			if (CoopBosses.isHero(target)){ // COOP-HOOK: was target == Dungeon.hero
+				((Hero)target).interrupt();
 			}
 			rockCenter = trajectory.path.get(Math.min(trajectory.dist, 1));
 
@@ -593,10 +596,7 @@ public class DM300 extends Mob {
 		}
 		Statistics.bossScores[2] += 3000;
 
-		LloydsBeacon beacon = Dungeon.hero.belongings.getItem(LloydsBeacon.class);
-		if (beacon != null) {
-			beacon.upgrade();
-		}
+		CoopBosses.upgradeBeacons(); // COOP-HOOK: was Dungeon.hero's beacon only
 
 		yell( Messages.get(this, "defeated") );
 	}
@@ -696,7 +696,7 @@ public class DM300 extends Mob {
 				}
 				if (ch.isAlive()) {
 					Buff.prolong(ch, Paralysis.class, Dungeon.isChallenged(Challenges.STRONGER_BOSSES) ? 5 : 3);
-				} else if (ch == Dungeon.hero){
+				} else if (CoopBosses.isHero(ch)){ // COOP-HOOK: was ch == Dungeon.hero
 					Dungeon.fail( target );
 					GLog.n( Messages.get( GnollGeomancer.class, "rockfall_kill") );
 				}

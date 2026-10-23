@@ -38,6 +38,8 @@ import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.CharSprite;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.ShamanSprite;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopDeaths;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore;
 import com.watabou.noosa.audio.Sample;
 import com.watabou.utils.Random;
 
@@ -119,17 +121,17 @@ public abstract class Shaman extends Mob {
 			
 			if (Random.Int( 2 ) == 0) {
 				debuff( enemy );
-				if (enemy == Dungeon.hero) Sample.INSTANCE.play( Assets.Sounds.DEBUFF );
+				if (CoopCore.isPartyHero(enemy)) Sample.INSTANCE.play( Assets.Sounds.DEBUFF ); // COOP-HOOK
 			}
 			
 			int dmg = Random.NormalIntRange( 6, 15 );
 			dmg = Math.round(dmg * AscensionChallenge.statModifier(this));
 			enemy.damage( dmg, new EarthenBolt() );
 			
-			if (!enemy.isAlive() && enemy == Dungeon.hero) {
+			if (CoopDeaths.heroDied(enemy)) { // COOP-HOOK: any party hero
 				Badges.validateDeathFromEnemyMagic();
-				Dungeon.fail( this );
-				GLog.n( Messages.get(this, "bolt_kill") );
+				CoopDeaths.fail(enemy, this); // COOP-HOOK
+				CoopDeaths.log(enemy, Messages.get(this, "bolt_kill")); // COOP-HOOK
 			}
 		} else {
 			enemy.sprite.showStatus( CharSprite.NEUTRAL,  enemy.defenseVerb() );

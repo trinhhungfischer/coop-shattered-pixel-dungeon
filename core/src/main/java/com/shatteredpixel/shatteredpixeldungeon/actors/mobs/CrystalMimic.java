@@ -41,6 +41,10 @@ import com.shatteredpixel.shatteredpixeldungeon.items.wands.Wand;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.MimicSprite;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCombat;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopVision;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopMobs;
 import com.watabou.noosa.audio.Sample;
 import com.watabou.utils.PathFinder;
 import com.watabou.utils.Random;
@@ -114,9 +118,9 @@ public class CrystalMimic extends Mimic {
 		} else {
 			Buff.affect(this, Haste.class, 1f);
 		}
-		if (Actor.chars().contains(this) && Dungeon.level.heroFOV[pos]) {
-			enemy = Dungeon.hero;
-			target = Dungeon.hero.pos;
+		if (Actor.chars().contains(this) && CoopVision.seenByAnyHero(Dungeon.level, pos)) { // COOP-HOOK: seen by any hero
+			enemy = CoopCombat.focusHero(pos); // COOP-HOOK: closest hero (was Dungeon.hero)
+			target = enemy.pos;
 			GLog.w(Messages.get(this, "reveal") );
 			CellEmitter.get(pos).burst(Speck.factory(Speck.STAR), 10);
 			Sample.INSTANCE.play(Assets.Sounds.MIMIC, 1, 1.25f);
@@ -125,8 +129,8 @@ public class CrystalMimic extends Mimic {
 
 	@Override
 	public int attackProc(Char enemy, int damage) {
-		if (alignment == Alignment.NEUTRAL && enemy == Dungeon.hero){
-			steal( Dungeon.hero );
+		if (alignment == Alignment.NEUTRAL && CoopCore.isPartyHero(enemy)){ // COOP-HOOK: steal from the hero it attacks
+			steal( (Hero)enemy );
 
 		} else {
 			ArrayList<Integer> candidates = new ArrayList<>();
@@ -157,7 +161,7 @@ public class CrystalMimic extends Mimic {
 
 			GLog.w( Messages.get(this, "ate", item.name()) );
 			if (!item.stackable) {
-				Dungeon.quickslot.convertToPlaceholder(item);
+				CoopMobs.convertStolenToPlaceholder(hero, item); // COOP-HOOK: the victim's quickslots
 			}
 			item.updateQuickslot();
 
@@ -185,7 +189,7 @@ public class CrystalMimic extends Mimic {
 	private class Fleeing extends Mob.Fleeing {
 		@Override
 		protected void escaped() {
-			if (!Dungeon.level.heroFOV[pos] && Dungeon.level.distance(Dungeon.hero.pos, pos) >= 6) {
+			if (CoopMobs.escapedFromHeroes(pos, 6)) { // COOP-HOOK: away from every hero
 				GLog.n(Messages.get(CrystalMimic.class, "escaped"));
 				destroy();
 				sprite.killAndErase();

@@ -34,6 +34,8 @@ import com.shatteredpixel.shatteredpixeldungeon.items.Item;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.ItemSpriteSheet;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCombat;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore;
 import com.watabou.noosa.Game;
 import com.watabou.noosa.audio.Music;
 import com.watabou.noosa.audio.Sample;
@@ -122,12 +124,15 @@ public class CorpseDust extends Item {
 				ArrayList<Integer> candidates = new ArrayList<>();
 				//min distance scales based on hero's view distance
 				// wraiths must spawn at least 4/3/2/1 tiles away at view distance of 8(default)/7/4/1
-				int minDist = Math.round(Dungeon.hero.viewDistance/3f);
+				Hero carrier = CoopCombat.heroOf(target); // COOP-HOOK: the hero carrying the dust (was Dungeon.hero)
+				boolean[] fov = (carrier != Dungeon.hero && carrier.fieldOfView != null
+						&& carrier.fieldOfView.length == Dungeon.level.length()) ? carrier.fieldOfView : Dungeon.level.heroFOV;
+				int minDist = Math.round(carrier.viewDistance/3f);
 				for (int i = 0; i < Dungeon.level.length(); i++){
-					if (Dungeon.level.heroFOV[i]
+					if (fov[i]
 							&& !Dungeon.level.solid[i]
 							&& Actor.findChar( i ) == null
-							&& Dungeon.level.distance(i, Dungeon.hero.pos) > minDist){
+							&& Dungeon.level.distance(i, carrier.pos) > minDist){
 						candidates.add(i);
 					}
 				}
@@ -188,7 +193,7 @@ public class CorpseDust extends Item {
 
 		@Override
 		public boolean attack(Char enemy, float dmgMulti, float dmgBonus, float accMulti) {
-			if (enemy == Dungeon.hero){
+			if (CoopCore.isPartyHero(enemy)){ // COOP-HOOK: any party hero
 				atkCount++;
 				//first attack from each wraith is free, max of -200 point penalty per wraith
 				if (atkCount == 2 || atkCount == 3){

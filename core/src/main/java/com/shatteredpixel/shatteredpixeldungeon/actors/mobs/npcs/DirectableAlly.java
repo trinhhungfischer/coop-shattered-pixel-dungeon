@@ -25,6 +25,8 @@ import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
 import com.shatteredpixel.shatteredpixeldungeon.actors.Actor;
 import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopAllies;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore;
 import com.watabou.utils.Bundle;
 
 public class DirectableAlly extends NPC {
@@ -83,12 +85,12 @@ public class DirectableAlly extends NPC {
 	public void directTocell( int cell ){
 		if (!Dungeon.level.heroFOV[cell]
 				|| Actor.findChar(cell) == null
-				|| (Actor.findChar(cell) != Dungeon.hero && Actor.findChar(cell).alignment != Char.Alignment.ENEMY)){
+				|| (!CoopCore.isPartyHero(Actor.findChar(cell)) && Actor.findChar(cell).alignment != Char.Alignment.ENEMY)){ // COOP-HOOK: any party hero
 			defendPos( cell );
 			return;
 		}
 
-		if (Actor.findChar(cell) == Dungeon.hero){
+		if (CoopCore.isPartyHero(Actor.findChar(cell))){ // COOP-HOOK
 			followHero();
 
 		} else if (Actor.findChar(cell).alignment == Char.Alignment.ENEMY){
@@ -135,7 +137,7 @@ public class DirectableAlly extends NPC {
 				enemySeen = false;
 
 				int oldPos = pos;
-				target = defendingPos != -1 ? defendingPos : Dungeon.hero.pos;
+				target = defendingPos != -1 ? defendingPos : CoopAllies.leader(DirectableAlly.this).pos; // COOP-HOOK: follow the summoner
 				//always move towards the hero when wandering
 				if (getCloser( target )) {
 					spend( 1 / speed() );

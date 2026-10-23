@@ -39,8 +39,10 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Dread;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.LockedFloor;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Roots;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Terror;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopBosses;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.HeroSubClass;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopLoot;
 import com.shatteredpixel.shatteredpixeldungeon.effects.BlobEmitter;
 import com.shatteredpixel.shatteredpixeldungeon.effects.CellEmitter;
 import com.shatteredpixel.shatteredpixeldungeon.effects.FloatingText;
@@ -211,8 +213,11 @@ public class Tengu extends Mob {
 	@Override
 	public void die( Object cause ) {
 		
-		if (Dungeon.hero.subClass == HeroSubClass.NONE) {
-			Dungeon.level.drop( new TengusMask(), pos ).sprite.drop();
+		//COOP-HOOK: was if (Dungeon.hero.subClass == HeroSubClass.NONE); in coop one mask every hero can loot once
+		if (CoopBosses.masksToDrop() > 0) {
+			Heap maskHeap = Dungeon.level.drop( new TengusMask(), pos );
+			maskHeap.sprite.drop();
+			CoopLoot.tagForParty( maskHeap, TengusMask.class ); // COOP-HOOK
 		}
 		
 		GameScene.bossSlain();
@@ -224,10 +229,7 @@ public class Tengu extends Mob {
 		}
 		Statistics.bossScores[1] += 2000;
 		
-		LloydsBeacon beacon = Dungeon.hero.belongings.getItem(LloydsBeacon.class);
-		if (beacon != null) {
-			beacon.upgrade();
-		}
+		CoopBosses.upgradeBeacons(); // COOP-HOOK: was Dungeon.hero's beacon only
 		
 		yell( Messages.get(this, "defeated") );
 	}
@@ -246,7 +248,7 @@ public class Tengu extends Mob {
 		}
 		
 		if (enemy == null) enemy = chooseEnemy();
-		if (enemy == null) enemy = Dungeon.hero; //jump away from hero if nothing else is being targeted
+		if (enemy == null) enemy = CoopBosses.target(null, pos); //jump away from hero if nothing else is being targeted // COOP-HOOK: was Dungeon.hero
 		
 		int newPos;
 		if (Dungeon.level instanceof PrisonBossLevel){
@@ -262,7 +264,7 @@ public class Tengu extends Mob {
 					newPos = ((PrisonBossLevel)Dungeon.level).randomTenguCellPos();
 					tries--;
 				} while ( tries > 0 && (level.trueDistance(newPos, enemy.pos) <= 3.5f
-						|| level.trueDistance(newPos, Dungeon.hero.pos) <= 3.5f
+						|| CoopBosses.nearParty(level, newPos, 3.5f) // COOP-HOOK: was trueDistance to Dungeon.hero <= 3.5f
 						|| Actor.findChar(newPos) != null));
 
 				if (tries <= 0) newPos = pos;
@@ -289,8 +291,7 @@ public class Tengu extends Mob {
 						(level.solid[newPos] ||
 								level.distance(newPos, enemy.pos) < 5 ||
 								level.distance(newPos, enemy.pos) > 7 ||
-								level.distance(newPos, Dungeon.hero.pos) < 5 ||
-								level.distance(newPos, Dungeon.hero.pos) > 7 ||
+								CoopBosses.badArenaJump(level, newPos) || // COOP-HOOK: was distance to Dungeon.hero < 5 or > 7
 								level.distance(newPos, pos) < 5 ||
 								Actor.findChar(newPos) != null ||
 								Dungeon.level.heaps.get(newPos) != null));
@@ -334,14 +335,14 @@ public class Tengu extends Mob {
 			BossHealthBar.assignBoss(this);
 			if (HP <= HT/2) BossHealthBar.bleed(true);
 			if (HP == HT) {
-				yell(Messages.get(this, "notice_gotcha", Dungeon.hero.name()));
+				yell(Messages.get(this, "notice_gotcha", CoopBosses.target(enemy, pos).name())); // COOP-HOOK: was Dungeon.hero.name()
 				for (Char ch : Actor.chars()){
 					if (ch instanceof DriedRose.GhostHero){
 						((DriedRose.GhostHero) ch).sayBoss();
 					}
 				}
 			} else {
-				yell(Messages.get(this, "notice_have", Dungeon.hero.name()));
+				yell(Messages.get(this, "notice_have", CoopBosses.target(enemy, pos).name())); // COOP-HOOK: was Dungeon.hero.name()
 			}
 		}
 	}
@@ -492,6 +493,7 @@ public class Tengu extends Mob {
 	public boolean useAbility(){
 		boolean abilityUsed = false;
 		int abilityToUse = -1;
+		Char abilityTarget = CoopBosses.target(enemy, pos); // COOP-HOOK: abilities used to always target Dungeon.hero
 		
 		while (!abilityUsed){
 			
@@ -511,28 +513,28 @@ public class Tengu extends Mob {
 			if (abilityToUse != lastAbility || Random.Int(10) == 0){
 				switch (abilityToUse){
 					case BOMB_ABILITY : default:
-						abilityUsed = throwBomb(Tengu.this, Dungeon.hero);
+						abilityUsed = throwBomb(Tengu.this, abilityTarget);
 						//if Tengu cannot use his bomb ability first, use fire instead.
 						if (abilitiesUsed == 0 && !abilityUsed){
 							abilityToUse = FIRE_ABILITY;
-							abilityUsed = throwFire(Tengu.this, Dungeon.hero);
+							abilityUsed = throwFire(Tengu.this, abilityTarget);
 						}
 						break;
 					case FIRE_ABILITY:
-						abilityUsed = throwFire(Tengu.this, Dungeon.hero);
+						abilityUsed = throwFire(Tengu.this, abilityTarget);
 						break;
 					case SHOCKER_ABILITY:
-						abilityUsed = throwShocker(Tengu.this, Dungeon.hero);
+						abilityUsed = throwShocker(Tengu.this, abilityTarget);
 						//if Tengu cannot use his shocker ability second, use fire instead.
 						if (abilitiesUsed == 1 && !abilityUsed){
 							abilityToUse = FIRE_ABILITY;
-							abilityUsed = throwFire(Tengu.this, Dungeon.hero);
+							abilityUsed = throwFire(Tengu.this, abilityTarget);
 						}
 						break;
 				}
 				//always use the fire ability with the bosses challenge
 				if (abilityUsed && abilityToUse != FIRE_ABILITY && Dungeon.isChallenged(Challenges.STRONGER_BOSSES)){
-					throwFire(Tengu.this, Dungeon.hero);
+					throwFire(Tengu.this, abilityTarget);
 				}
 			}
 			
@@ -639,7 +641,7 @@ public class Tengu extends Mob {
 								ch.damage(dmg, Bomb.class);
 							}
 
-							if (ch == Dungeon.hero){
+							if (CoopBosses.isHero(ch)){ // COOP-HOOK: was ch == Dungeon.hero
 								Statistics.qualifiedForBossChallengeBadge = false;
 								Statistics.bossScores[1] -= 100;
 
@@ -873,7 +875,7 @@ public class Tengu extends Mob {
 							if (ch != null && !ch.isImmune(Fire.class) && !(ch instanceof Tengu)) {
 								Buff.affect( ch, Burning.class ).reignite( ch );
 							}
-							if (ch == Dungeon.hero){
+							if (CoopBosses.isHero(ch)){ // COOP-HOOK: was ch == Dungeon.hero
 								Statistics.qualifiedForBossChallengeBadge = false;
 								Statistics.bossScores[1] -= 100;
 							}
@@ -1068,7 +1070,7 @@ public class Tengu extends Mob {
 							if (ch != null && !(ch instanceof Tengu)){
 								ch.damage(2 + Dungeon.scalingDepth(), new Electricity());
 								
-								if (ch == Dungeon.hero){
+								if (CoopBosses.isHero(ch)){ // COOP-HOOK: was ch == Dungeon.hero
 									Statistics.qualifiedForBossChallengeBadge = false;
 									Statistics.bossScores[1] -= 100;
 									if (!ch.isAlive()) {

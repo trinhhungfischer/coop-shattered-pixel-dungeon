@@ -40,6 +40,10 @@ import com.shatteredpixel.shatteredpixeldungeon.sprites.CharSprite;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.NecromancerSprite;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.SkeletonSprite;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopDeaths;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCombat;
+import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopMobs;
 import com.watabou.noosa.audio.Sample;
 import com.watabou.utils.BArray;
 import com.watabou.utils.Bundle;
@@ -230,10 +234,10 @@ public class Necromancer extends Mob {
 				Char blocker = Actor.findChar(summoningPos);
 				if (blocker != null && blocker.alignment != alignment){
 					blocker.damage( Random.NormalIntRange(2, 10), new SummoningBlockDamage() );
-					if (blocker == Dungeon.hero && !blocker.isAlive()){
+					if (CoopDeaths.heroDied(blocker)){ // COOP-HOOK: any party hero
 						Badges.validateDeathFromEnemyMagic();
-						Dungeon.fail(this);
-						GLog.n( Messages.capitalize(Messages.get(Char.class, "kill", name())) );
+						CoopDeaths.fail(blocker, this); // COOP-HOOK
+						CoopCombat.logHeroKilled((Hero)blocker, this); // COOP-HOOK: names the victim in coop
 					}
 				}
 
@@ -319,8 +323,8 @@ public class Necromancer extends Mob {
 					summoning = true;
 					sprite.zap( summoningPos );
 
-					if (Dungeon.level.heroFOV[pos] || Dungeon.level.heroFOV[summoningPos]){
-						Dungeon.hero.interrupt();
+					if (CoopMobs.seen(pos) || CoopMobs.seen(summoningPos)){ // COOP-HOOK: every hero that sees it
+						CoopMobs.interruptWatchers(pos, summoningPos);
 					}
 					
 					spend( firstSummon ? TICK : 2*TICK );
@@ -373,8 +377,8 @@ public class Necromancer extends Mob {
 								summoning = true;
 								summoningPos = telePos;
 								sprite.zap(telePos);
-								if (Dungeon.level.heroFOV[pos] || Dungeon.level.heroFOV[summoningPos]) {
-									Dungeon.hero.interrupt();
+								if (CoopMobs.seen(pos) || CoopMobs.seen(summoningPos)) { // COOP-HOOK: every hero that sees it
+									CoopMobs.interruptWatchers(pos, summoningPos);
 								}
 								spend(TICK); //2 ticks total, it can't be the first summon
 							}

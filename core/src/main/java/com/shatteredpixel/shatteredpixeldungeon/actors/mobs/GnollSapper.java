@@ -29,6 +29,7 @@ import com.shatteredpixel.shatteredpixeldungeon.levels.Terrain;
 import com.shatteredpixel.shatteredpixeldungeon.mechanics.Ballistica;
 import com.shatteredpixel.shatteredpixeldungeon.scenes.GameScene;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.GnollSapperSprite;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopMobs;
 import com.watabou.utils.Bundle;
 import com.watabou.utils.GameMath;
 import com.watabou.utils.PathFinder;
@@ -203,13 +204,13 @@ public class GnollSapper extends Mob {
 							GameScene.targetedCell(i, delay);
 						}
 
-						Dungeon.hero.interrupt();
+						CoopMobs.heroToInterrupt(enemy).interrupt(); // COOP-HOOK: the targeted hero
 						abilityCooldown = Random.NormalIntRange(4, 6);
 						spend(delay);
 						return true;
 					} else if (GnollGeomancer.prepRockFallAttack(enemy, GnollSapper.this, 2, true)) {
 						lastAbilityWasRockfall = true;
-						Dungeon.hero.interrupt();
+						CoopMobs.heroToInterrupt(enemy).interrupt(); // COOP-HOOK: the targeted hero
 						spend(GameMath.gate(TICK, (int)Math.ceil(enemy.cooldown()), 3*TICK));
 						abilityCooldown = Random.NormalIntRange(4, 6);
 						return true;

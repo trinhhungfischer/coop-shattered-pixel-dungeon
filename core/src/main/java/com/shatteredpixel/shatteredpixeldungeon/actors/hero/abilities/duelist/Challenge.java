@@ -47,6 +47,8 @@ import com.shatteredpixel.shatteredpixeldungeon.sprites.CharSprite;
 import com.shatteredpixel.shatteredpixeldungeon.ui.BuffIndicator;
 import com.shatteredpixel.shatteredpixeldungeon.ui.HeroIcon;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.Coop;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore;
 import com.watabou.noosa.audio.Sample;
 import com.watabou.utils.BArray;
 import com.watabou.utils.Bundle;
@@ -221,6 +223,18 @@ public class Challenge extends ArmorAbility {
 			return Integer.toString(left);
 		}
 
+		//COOP-HOOK: the hero in this duel. Solo: Dungeon.hero
+		private Hero duelist(){
+			if (Coop.active()){
+				for (Char ch : Actor.chars()){
+					if (ch != target && Coop.isHero(ch) && ch.buff(DuelParticipant.class) != null){
+						return (Hero) ch;
+					}
+				}
+			}
+			return Dungeon.hero;
+		}
+
 		public void addDamage(int dmg){
 			takenDmg += dmg;
 		}
@@ -253,12 +267,13 @@ public class Challenge extends ArmorAbility {
 		@Override
 		public void detach() {
 			super.detach();
-			if (target != Dungeon.hero){
-				if (!target.isAlive() || target.alignment == Dungeon.hero.alignment){
+			if (!CoopCore.isPartyHero(target)){ // COOP-HOOK: any party hero (was target != Dungeon.hero)
+				Hero duelist = duelist(); // COOP-HOOK: the dueling hero (was Dungeon.hero)
+				if (!target.isAlive() || target.alignment == duelist.alignment){
 					Sample.INSTANCE.play(Assets.Sounds.BOSS);
 
-					if (Dungeon.hero.hasTalent(Talent.INVIGORATING_VICTORY)){
-						DuelParticipant heroBuff = Dungeon.hero.buff(DuelParticipant.class);
+					if (duelist.hasTalent(Talent.INVIGORATING_VICTORY)){
+						DuelParticipant heroBuff = duelist.buff(DuelParticipant.class);
 
 						int hpToHeal = 0;
 						if (heroBuff != null){
@@ -266,22 +281,24 @@ public class Challenge extends ArmorAbility {
 						}
 
 						//heals for 30%/50%/65%/75% of taken damage plus 5/10/15/20 bonus, based on talent points
-						hpToHeal = (int)Math.round(hpToHeal * (1f - Math.pow(0.707f, Dungeon.hero.pointsInTalent(Talent.INVIGORATING_VICTORY))));
-						hpToHeal += 5*Dungeon.hero.pointsInTalent(Talent.INVIGORATING_VICTORY);
-						hpToHeal = Math.min(hpToHeal, Dungeon.hero.HT - Dungeon.hero.HP);
-						if (hpToHeal > 0){
-							Dungeon.hero.HP += hpToHeal;
-							Dungeon.hero.sprite.emitter().start( Speck.factory( Speck.HEALING ), 0.33f, 6 );
-							Dungeon.hero.sprite.showStatusWithIcon( CharSprite.POSITIVE, Integer.toString(hpToHeal), FloatingText.HEALING );
+						hpToHeal = (int)Math.round(hpToHeal * (1f - Math.pow(0.707f, duelist.pointsInTalent(Talent.INVIGORATING_VICTORY))));
+						hpToHeal += 5*duelist.pointsInTalent(Talent.INVIGORATING_VICTORY);
+						hpToHeal = Math.min(hpToHeal, duelist.HT - duelist.HP);
+						if (hpToHeal > 0 && (duelist.isAlive() || !Coop.active())){ // COOP-HOOK: never heal a spectator
+
+							duelist.HP += hpToHeal;
+							duelist.sprite.emitter().start( Speck.factory( Speck.HEALING ), 0.33f, 6 );
+							duelist.sprite.showStatusWithIcon( CharSprite.POSITIVE, Integer.toString(hpToHeal), FloatingText.HEALING );
 						}
 					}
 				}
 
 			} else {
-				if (Dungeon.hero.isAlive()) {
+				Hero duelist = (Hero)target; // COOP-HOOK: was Dungeon.hero
+				if (duelist.isAlive()) {
 					GameScene.flash(0x80FFFFFF);
 
-					if (Dungeon.hero.hasTalent(Talent.ELIMINATION_MATCH)){
+					if (duelist.hasTalent(Talent.ELIMINATION_MATCH)){
 						Buff.affect(target, EliminationMatchTracker.class, 3);
 					}
 				}

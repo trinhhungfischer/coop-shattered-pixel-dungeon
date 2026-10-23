@@ -30,6 +30,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.DwarfKing;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.Imp;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopBosses;
 import com.shatteredpixel.shatteredpixeldungeon.items.Heap;
 import com.shatteredpixel.shatteredpixeldungeon.items.Item;
 import com.shatteredpixel.shatteredpixeldungeon.levels.features.LevelTransition;
@@ -315,7 +316,8 @@ public class CityBossLevel extends Level {
 	@Override
 	public void occupyCell( Char ch ) {
 		if (map[bottomDoor] != Terrain.LOCKED_DOOR && map[topDoor] == Terrain.LOCKED_DOOR
-				&& ch.pos < bottomDoor && ch == Dungeon.hero) {
+				&& ch.pos < bottomDoor && CoopBosses.isHero(ch)) { // COOP-HOOK: was ch == Dungeon.hero
+			CoopBosses.triggeredBy(ch); // COOP-HOOK
 			seal();
 		}
 
@@ -330,13 +332,15 @@ public class CityBossLevel extends Level {
 		//moves intelligent allies with the hero, preferring closer pos to entrance door
 		int doorPos = pointToCell(new Point(arena.left + arena.width()/2, arena.bottom));
 		Mob.holdAllies(this, doorPos);
-		Mob.restoreAllies(this, Dungeon.hero.pos, doorPos);
+		//COOP-HOOK: pull heroes that are still outside into the arena, around the hero who walked in
+		CoopBosses.gatherParty(this, CoopBosses.anchor(), new Rect(arena.left+1, arena.top+1, arena.right-1, arena.bottom-1), false, pointToCell(arena.center()));
+		Mob.restoreAllies(this, CoopBosses.anchor().pos, doorPos); // COOP-HOOK: was Dungeon.hero.pos
 
 		DwarfKing boss = new DwarfKing();
 		boss.state = boss.WANDERING;
 		boss.pos = pointToCell(arena.center());
 		GameScene.add( boss );
-		boss.beckon(Dungeon.hero.pos);
+		boss.beckon(CoopBosses.anchor().pos); // COOP-HOOK: was Dungeon.hero.pos
 
 		if (heroFOV[boss.pos]) {
 			boss.notice();

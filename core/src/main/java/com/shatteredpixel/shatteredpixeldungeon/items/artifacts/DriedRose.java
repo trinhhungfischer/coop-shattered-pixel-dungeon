@@ -41,6 +41,9 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.hero.spells.Stasis;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Wraith;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.DirectableAlly;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.Ghost;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopAllies;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopDeaths;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopVision;
 import com.shatteredpixel.shatteredpixeldungeon.effects.CellEmitter;
 import com.shatteredpixel.shatteredpixeldungeon.effects.FloatingText;
 import com.shatteredpixel.shatteredpixeldungeon.effects.Speck;
@@ -173,6 +176,7 @@ public class DriedRose extends Artifact {
 					ghost.pos = Random.element(spawnPoints);
 
 					GameScene.add(ghost, 1f);
+					CoopVision.setOwner(ghost, hero); // COOP-HOOK: the ghost belongs to the rose's holder
 					Dungeon.level.occupyCell(ghost);
 					
 					CellEmitter.get(ghost.pos).start( ShaftParticle.FACTORY, 0.3f, 4 );
@@ -183,7 +187,7 @@ public class DriedRose extends Artifact {
 					hero.sprite.operate(hero.pos);
 
 					if (!firstSummon) {
-						ghost.yell( Messages.get(GhostHero.class, "hello", Messages.titleCase(Dungeon.hero.name())) );
+						ghost.yell( Messages.get(GhostHero.class, "hello", Messages.titleCase(hero.name())) ); // COOP-HOOK: was Dungeon.hero
 						Sample.INSTANCE.play( Assets.Sounds.GHOST );
 						firstSummon = true;
 						
@@ -585,17 +589,23 @@ public class DriedRose extends Artifact {
 
 		private void updateRose(){
 			if (rose == null) {
-				rose = Dungeon.hero.belongings.getItem(DriedRose.class);
+				rose = owner().belongings.getItem(DriedRose.class); // COOP-HOOK: was Dungeon.hero
 				if (rose != null) {
 					rose.ghost = this;
 					rose.ghostID = id();
 				}
 			}
+			CoopVision.setOwner(this, owner()); // COOP-HOOK: follows and shares vision with the holder
 			
 			//same dodge as the hero
-			defenseSkill = (Dungeon.hero.lvl+4);
+			defenseSkill = (owner().lvl+4); // COOP-HOOK: was Dungeon.hero
 			if (rose == null) return;
 			HT = 40 + 10*rose.level();
+		}
+
+		//COOP-HOOK: the hero carrying the rose (Dungeon.hero in solo)
+		private Hero owner(){
+			return CoopAllies.roseHolder( rose );
 		}
 
 		public Weapon weapon(){
@@ -616,8 +626,8 @@ public class DriedRose extends Artifact {
 		protected boolean act() {
 			updateRose();
 			if (rose == null
-					|| !rose.isEquipped(Dungeon.hero)
-					|| Dungeon.hero.buff(MagicImmune.class) != null){
+					|| !rose.isEquipped(owner()) // COOP-HOOK: was Dungeon.hero
+					|| owner().buff(MagicImmune.class) != null){
 				damage(1, new NoRoseDamage());
 			}
 			
@@ -633,7 +643,7 @@ public class DriedRose extends Artifact {
 		public int attackSkill(Char target) {
 			
 			//same accuracy as the hero.
-			int acc = Dungeon.hero.lvl + 9;
+			int acc = owner().lvl + 9; // COOP-HOOK: was Dungeon.hero
 			
 			if (weapon() != null){
 				acc *= weapon().accuracyFactor( this, target );
@@ -681,8 +691,8 @@ public class DriedRose extends Artifact {
 
 			if (weapon() != null) {
 				damage = weapon().proc(this, enemy, damage);
-				if (!enemy.isAlive() && enemy == Dungeon.hero) {
-					Dungeon.fail(this);
+				if (!enemy.isAlive() && CoopDeaths.heroDied(enemy)) { // COOP-HOOK: any party hero
+					CoopDeaths.fail(enemy, this); // COOP-HOOK
 					GLog.n(Messages.capitalize(Messages.get(Char.class, "kill", name())));
 				}
 			}
@@ -713,7 +723,7 @@ public class DriedRose extends Artifact {
 			//moves 2 tiles at a time when returning to the hero
 			if (state == WANDERING
 					&& defendingPos == -1
-					&& Dungeon.level.distance(pos, Dungeon.hero.pos) > 1){
+					&& Dungeon.level.distance(pos, owner().pos) > 1){ // COOP-HOOK: was Dungeon.hero
 				speed *= 2;
 			}
 			
@@ -755,7 +765,7 @@ public class DriedRose extends Artifact {
 		@Override
 		public boolean interact(Char c) {
 			updateRose();
-			if (c == Dungeon.hero && rose != null && !rose.talkedTo){
+			if (c == owner() && rose != null && !rose.talkedTo){ // COOP-HOOK: was Dungeon.hero
 				rose.talkedTo = true;
 				Game.runOnRenderThread(new Callback() {
 					@Override

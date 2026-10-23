@@ -51,6 +51,8 @@ import com.shatteredpixel.shatteredpixeldungeon.scenes.PixelScene;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.MobSprite;
 import com.shatteredpixel.shatteredpixeldungeon.ui.HeroIcon;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopAllies;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopVision;
 import com.watabou.noosa.TextureFilm;
 import com.watabou.noosa.audio.Sample;
 import com.watabou.utils.BArray;
@@ -118,13 +120,14 @@ public class SmokeBomb extends ArmorAbility {
 
 				if (hero.hasTalent(Talent.BODY_REPLACEMENT)) {
 					for (Char ch : Actor.chars()){
-						if (ch instanceof NinjaLog){
+						if (ch instanceof NinjaLog && CoopAllies.ownedBy(ch, hero)){ // COOP-HOOK: only this rogue's log
 							ch.die(null);
 						}
 					}
 
 					NinjaLog n = new NinjaLog();
 					n.pos = hero.pos;
+					CoopVision.setOwner(n, hero); // COOP-HOOK
 					GameScene.add(n);
 					Dungeon.level.occupyCell(n);
 				}
@@ -181,8 +184,9 @@ public class SmokeBomb extends ArmorAbility {
 		public int drRoll() {
 			int dr = super.drRoll();
 
-			dr += Random.NormalIntRange(Dungeon.hero.pointsInTalent(Talent.BODY_REPLACEMENT),
-					3*Dungeon.hero.pointsInTalent(Talent.BODY_REPLACEMENT));
+			Hero owner = CoopAllies.summoner(this); // COOP-HOOK: the rogue's talent (was Dungeon.hero)
+			dr += Random.NormalIntRange(owner.pointsInTalent(Talent.BODY_REPLACEMENT),
+					3*owner.pointsInTalent(Talent.BODY_REPLACEMENT));
 
 			return dr;
 		}

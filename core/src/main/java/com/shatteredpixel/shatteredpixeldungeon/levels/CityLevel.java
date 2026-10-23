@@ -28,6 +28,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.AscensionChallenge;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.LostInventory;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.Imp;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopQuestsImp;
 import com.shatteredpixel.shatteredpixeldungeon.effects.particles.ElmoParticle;
 import com.shatteredpixel.shatteredpixeldungeon.items.armor.ClothArmor;
 import com.shatteredpixel.shatteredpixeldungeon.items.quest.EscapeCrystal;
@@ -175,6 +176,7 @@ public class CityLevel extends RegularLevel {
 								hero.belongings.armor = new ClothArmor();
 								hero.belongings.armor.identify();
 								hero.updateHT( false );
+								CoopQuestsImp.onEnterVault(hero); // COOP-HOOK: the other heroes hand in their belongings too
 								CityLevel.super.activateTransition(hero, transition);
 							}
 						}

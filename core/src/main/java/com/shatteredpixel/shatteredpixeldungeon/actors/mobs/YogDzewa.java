@@ -32,6 +32,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Invisibility;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Light;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.LockedFloor;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.Sheep;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopBosses;
 import com.shatteredpixel.shatteredpixeldungeon.effects.Beam;
 import com.shatteredpixel.shatteredpixeldungeon.effects.CellEmitter;
 import com.shatteredpixel.shatteredpixeldungeon.effects.Pushing;
@@ -177,10 +178,10 @@ public class YogDzewa extends Mob {
 		//end of char/mob logic
 
 		if (phase == 0){
-			if (Dungeon.hero.viewDistance >= Dungeon.level.distance(pos, Dungeon.hero.pos)) {
+			if (CoopBosses.anyHeroInViewRange(pos)) { // COOP-HOOK: was Dungeon.hero only
 				Dungeon.observe();
 			}
-			if (Dungeon.level.heroFOV[pos]) {
+			if (CoopBosses.seen(pos)) { // COOP-HOOK: was Dungeon.level.heroFOV[pos]
 				notice();
 			}
 		}
@@ -191,7 +192,7 @@ public class YogDzewa extends Mob {
 		} else {
 
 			//delay fire on a rooted hero
-			if (!targetedCells.isEmpty() && !Dungeon.hero.rooted) {
+			if (!targetedCells.isEmpty() && !CoopBosses.yogHoldsFire(pos, targetedCells)) { // COOP-HOOK: was !Dungeon.hero.rooted
 				boolean terrainAffected = false;
 				HashSet<Char> affected = new HashSet<>();
 				for (int i : targetedCells) {
@@ -217,7 +218,7 @@ public class YogDzewa extends Mob {
 				Invisibility.dispel(this);
 				for (Char ch : affected) {
 
-					if (ch == Dungeon.hero) {
+					if (CoopBosses.isHero(ch)) { // COOP-HOOK: was ch == Dungeon.hero
 						Statistics.bossScores[4] -= 500;
 					}
 
@@ -231,7 +232,7 @@ public class YogDzewa extends Mob {
 							ch.sprite.flash();
 							CellEmitter.center(pos).burst(PurpleParticle.BURST, Random.IntRange(1, 2));
 						}
-						if (!ch.isAlive() && ch == Dungeon.hero) {
+						if (!ch.isAlive() && CoopBosses.isHero(ch)) { // COOP-HOOK: was ch == Dungeon.hero
 							Badges.validateDeathFromEnemyMagic();
 							Dungeon.fail(this);
 							GLog.n(Messages.get(Char.class, "kill", name()));
@@ -247,13 +248,14 @@ public class YogDzewa extends Mob {
 
 				int beams = 1 + (HT - HP)/400;
 				HashSet<Integer> affectedCells = new HashSet<>();
+				Char beamTarget = CoopBosses.target(enemy, pos); // COOP-HOOK: beams used to always aim at Dungeon.hero
 				for (int i = 0; i < beams; i++){
 
-					int targetPos = Dungeon.hero.pos;
+					int targetPos = beamTarget.pos;
 					if (i != 0){
 						do {
-							targetPos = Dungeon.hero.pos + PathFinder.NEIGHBOURS8[Random.Int(8)];
-						} while (Dungeon.level.trueDistance(pos, Dungeon.hero.pos)
+							targetPos = beamTarget.pos + PathFinder.NEIGHBOURS8[Random.Int(8)];
+						} while (Dungeon.level.trueDistance(pos, beamTarget.pos)
 								> Dungeon.level.trueDistance(pos, targetPos));
 					}
 					targetedCells.add(targetPos);
@@ -264,7 +266,7 @@ public class YogDzewa extends Mob {
 				//remove one beam if multiple shots would cause every cell next to the hero to be targeted
 				boolean allAdjTargeted = true;
 				for (int i : PathFinder.NEIGHBOURS9){
-					if (!affectedCells.contains(Dungeon.hero.pos + i) && Dungeon.level.passable[Dungeon.hero.pos + i]){
+					if (!affectedCells.contains(beamTarget.pos + i) && Dungeon.level.passable[beamTarget.pos + i]){
 						allAdjTargeted = false;
 						break;
 					}
@@ -274,7 +276,7 @@ public class YogDzewa extends Mob {
 				}
 
 				//don't want to overly punish players with slow move or attack speed
-				float delay = GameMath.gate(TICK, (int)Math.ceil(Dungeon.hero.cooldown()), 3*TICK);
+				float delay = GameMath.gate(TICK, (int)Math.ceil(beamTarget.cooldown()), 3*TICK);
 
 				for (int i : targetedCells){
 					Ballistica b = new Ballistica(pos, i, Ballistica.WONT_STOP);
@@ -285,7 +287,7 @@ public class YogDzewa extends Mob {
 				}
 
 				spend( delay );
-				Dungeon.hero.interrupt();
+				CoopBosses.interruptAll(); // COOP-HOOK: was Dungeon.hero.interrupt()
 
 				abilityCooldown += Random.NormalFloat(MIN_ABILITY_CD, MAX_ABILITY_CD);
 				abilityCooldown -= (phase - 1);
@@ -303,7 +305,7 @@ public class YogDzewa extends Mob {
 				int spawnPos = -1;
 				for (int i : PathFinder.NEIGHBOURS8){
 					if (Actor.findChar(pos+i) == null){
-						if (spawnPos == -1 || Dungeon.level.trueDistance(Dungeon.hero.pos, spawnPos) > Dungeon.level.trueDistance(Dungeon.hero.pos, pos+i)){
+						if (spawnPos == -1 || CoopBosses.partyTrueDistance(Dungeon.level, spawnPos) > CoopBosses.partyTrueDistance(Dungeon.level, pos+i)){ // COOP-HOOK: was trueDistance to Dungeon.hero
 							spawnPos = pos + i;
 						}
 					}
@@ -313,7 +315,7 @@ public class YogDzewa extends Mob {
 				if (spawnPos == -1){
 					for (int i : PathFinder.NEIGHBOURS8){
 						if (Actor.findChar(pos+i) instanceof Sheep){
-							if (spawnPos == -1 || Dungeon.level.trueDistance(Dungeon.hero.pos, spawnPos) > Dungeon.level.trueDistance(Dungeon.hero.pos, pos+i)){
+							if (spawnPos == -1 || CoopBosses.partyTrueDistance(Dungeon.level, spawnPos) > CoopBosses.partyTrueDistance(Dungeon.level, pos+i)){ // COOP-HOOK: was trueDistance to Dungeon.hero
 								spawnPos = pos + i;
 							}
 						}
@@ -327,7 +329,7 @@ public class YogDzewa extends Mob {
 					summon.pos = spawnPos;
 					GameScene.add( summon );
 					Actor.add( new Pushing( summon, pos, summon.pos ) );
-					summon.beckon(Dungeon.hero.pos);
+					summon.beckon(CoopBosses.target(null, summon.pos).pos); // COOP-HOOK: was Dungeon.hero.pos
 					Dungeon.level.occupyCell(summon);
 
 					summonCooldown += Random.NormalFloat(MIN_SUMMON_CD, MAX_SUMMON_CD);
@@ -484,6 +486,7 @@ public class YogDzewa extends Mob {
 			if (Dungeon.hero.buff(Light.class) == null) {
 				Dungeon.hero.viewDistance = level.viewDistance;
 			}
+			CoopBosses.syncViewDistance(level); // COOP-HOOK: the other heroes too
 			Dungeon.observe();
 		}
 	}

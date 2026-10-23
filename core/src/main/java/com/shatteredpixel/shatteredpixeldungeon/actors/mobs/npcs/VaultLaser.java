@@ -39,6 +39,8 @@ import com.shatteredpixel.shatteredpixeldungeon.scenes.GameScene;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.SentrySprite;
 import com.shatteredpixel.shatteredpixeldungeon.tiles.DungeonTilemap;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopDeaths;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore;
 import com.watabou.noosa.audio.Sample;
 import com.watabou.utils.Bundle;
 import com.watabou.utils.Random;
@@ -99,7 +101,7 @@ public class VaultLaser extends NPC {
 						ch.sprite.flash();
 						CellEmitter.center( pos ).burst( PurpleParticle.BURST, Random.IntRange( 1, 2 ) );
 					}
-					if (ch == Dungeon.hero){
+					if (CoopCore.isPartyHero(ch)){ // COOP-HOOK: any party hero
 						Sample.INSTANCE.play( Assets.Sounds.RAY );
 						SFXLastPlayed = ShatteredPixelDungeon.realTime;
 						if (Imp.Quest.hazardFreebies > 0){
@@ -109,8 +111,7 @@ public class VaultLaser extends NPC {
 						}
 						if (!ch.isAlive()){
 							Badges.validateDeathFromEnemyMagic();
-							Dungeon.fail( this );
-							GLog.n( Messages.get(this, "ondeath") );
+							CoopDeaths.died( ch, this, Messages.get(this, "ondeath") ); // COOP-HOOK
 						}
 					}
 				}

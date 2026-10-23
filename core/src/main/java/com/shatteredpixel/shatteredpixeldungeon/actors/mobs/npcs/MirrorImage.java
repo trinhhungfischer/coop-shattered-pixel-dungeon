@@ -44,6 +44,9 @@ import com.shatteredpixel.shatteredpixeldungeon.sprites.CharSprite;
 import com.shatteredpixel.shatteredpixeldungeon.sprites.MirrorSprite;
 import com.shatteredpixel.shatteredpixeldungeon.ui.BuffIndicator;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopDeaths;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCombat;
+import com.shatteredpixel.shatteredpixeldungeon.coop.CoopVision;
 import com.watabou.utils.Bundle;
 import com.watabou.utils.Random;
 
@@ -103,6 +106,7 @@ public class MirrorImage extends NPC {
 	public void duplicate( Hero hero ) {
 		this.hero = hero;
 		heroID = this.hero.id();
+		CoopVision.setOwner(this, hero); // COOP-HOOK: owner record for coop summon helpers
 		Buff.affect(this, MirrorInvis.class, Short.MAX_VALUE);
 	}
 	
@@ -176,9 +180,9 @@ public class MirrorImage extends NPC {
 		}
 		if (hero.belongings.weapon() != null){
 			damage = hero.belongings.weapon().proc( this, enemy, damage );
-			if (!enemy.isAlive() && enemy == Dungeon.hero){
-				Dungeon.fail(this);
-				GLog.n( Messages.capitalize(Messages.get(Char.class, "kill", name())) );
+			if (CoopDeaths.heroDied(enemy)){ // COOP-HOOK: any party hero
+				CoopDeaths.fail(enemy, this); // COOP-HOOK
+				CoopCombat.logHeroKilled((Hero)enemy, this); // COOP-HOOK: names the victim in coop
 			}
 			return damage;
 		} else {

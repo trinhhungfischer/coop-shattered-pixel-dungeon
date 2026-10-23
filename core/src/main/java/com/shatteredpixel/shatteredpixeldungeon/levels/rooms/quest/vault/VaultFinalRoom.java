@@ -295,8 +295,8 @@ public class VaultFinalRoom extends SpecialRoom {
 				//we add a 1 turn delay, but compute FOV to prevent an opening surprise attack
 				boss.fieldOfView = new boolean[Dungeon.level.length()];
 				Dungeon.level.updateFieldOfView( boss, boss.fieldOfView );
-				boss.aggro(Dungeon.hero);
-				boss.sprite.turnTo(boss.pos, Dungeon.hero.pos);
+				boss.aggro(hero); // COOP-HOOK: the hero who stepped in (was Dungeon.hero)
+				boss.sprite.turnTo(boss.pos, hero.pos);
 				boss.setElementalForm(boss.curForm()); //re-assert default form for particle fx
 				Dungeon.level.seal();
 				Level.set(Dungeon.level.pointToCell(entryDoor), Terrain.LOCKED_DOOR);
@@ -319,7 +319,7 @@ public class VaultFinalRoom extends SpecialRoom {
 						// melee weapon, thrown weapon, armor, and wand
 
 						boolean[] prepCriteria = new boolean[4];
-						for (Item i : Dungeon.hero.belongings){
+						for (Item i : hero.belongings){ // COOP-HOOK: the approaching hero (was Dungeon.hero)
 							//+2 or higher items means they're T2 or T3 vault loot
 							if (i.level() >= 2){
 								if (i instanceof MagesStaff){
