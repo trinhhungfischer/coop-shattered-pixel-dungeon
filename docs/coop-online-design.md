@@ -84,8 +84,31 @@ Phần này làm và kiểm thử **trong hotseat trước** (bot headless), r�
 - Quickslot của client được giữ theo đường dẫn item mỗi lần nhận lại túi đồ từ host.
 - Kiểm thử bằng `netGameSim`: client là Mage, bắn trượng (chọn ô), đọc Scroll of Upgrade (chọn item, rồi cửa sổ nâng cấp). Trượng lên +1 và checksum không lệch.
 
-**Còn lại cho M5:**
-- Cửa sổ mở sau qua `runOnRenderThread` (shop, một số NPC) chưa được chặn cho hero ở xa.
+**Trạng thái M5 (đã xong):**
+- **NPC, quest, shop:** nhiều cửa sổ được mở trễ một nhịp qua `Game.runOnRenderThread`. Hook `Game.callbackWrapper` ghi lại hero đang hành động lúc đó. Nếu là hero ở xa, callback chạy như một task của hero ấy, nên cửa sổ đi tới đúng người chơi.
+  - Cửa sổ có nút item (phần thưởng của Ghost, Wandmaker, Blacksmith) cũng được chuyển, nút mang tên item.
+  - Cửa sổ không có nút (lời quest, lời shopkeeper) hiện với một nút OK.
+  - Bấm Back trên client gọi `onBackPressed` của cửa sổ trên host.
+  - Cửa sổ chặn lại không bắt phím của host và không giữ camera.
+- **Vàng và năng lượng giả kim** dùng chung cho cả đội và được gửi trong mỗi bản cập nhật.
+- **Talent:** `TalentButton` gọi `CoopCommands.upgradeTalent`. Client gửi lệnh `talent`, host kiểm tra điểm còn lại rồi mới nâng. Bản sao hero trên client nhận cả talent, subclass và armor ability từ host.
+  - Chọn subclass (Tengu mask) và armor ability (King's crown) đi qua chuyển cửa sổ chung.
+- **Alchemy:**
+  - Khi hero ở xa tới nồi alchemy (hoặc dùng toolkit, spirit form), host không đổi scene mà gửi `alchopen`, và màn hình alchemy mở trên máy người chơi đó.
+  - Mỗi lần trộn, client gửi `alchemy` kèm loại, cấp và số lượng nguyên liệu. Host tìm đúng đồ trong túi hero, kiểm tra công thức và năng lượng rồi tự nấu.
+  - Client vẫn nấu trên bản sao để hiện kết quả. Túi đồ thật từ host thay vào khi người chơi quay lại game.
+  - Năng lượng hoá (energize) cũng là một lệnh.
+  - Khi chính người chơi host dùng alchemy, game dừng với mọi người và các client được báo.
+- **Nối lại khi rớt mạng:**
+  - Mỗi người chơi nhận một token bí mật trong `welcome`. Nếu rớt sau khi run bắt đầu, host giữ slot của họ.
+  - Client tự thử nối lại mỗi 2 giây trong 60 giây với slot và token. Host trả slot rồi gửi snapshot riêng cho người đó, cùng `seq`, nên người khác không phải tải lại.
+  - Trong lúc mất kết nối, nếu hero của người đó đang chung nhóm lượt với ai, nó tự chờ một lượt mỗi khi tới phiên, để trận đánh không bị treo.
+- **Kiểm thử:** `netGameSim -PnetDepth=4`. Client nhận điểm talent, nói chuyện với shopkeeper (menu, lời nói, cửa sổ mua), mua bình máu (mất 150 vàng), tự ngắt mạng rồi nối lại, sau đó nấu 3 hạt giống thành thuốc. Mọi kết quả được đối chiếu với host.
+
+**Hạn chế còn lại:**
+- Nút bấm trong cửa sổ của chính người chơi host vẫn chạy thẳng trên UI thread.
+- Kết quả alchemy ngẫu nhiên có thể hiện khác trên màn hình client cho tới khi túi đồ thật từ host về.
+- Metamorphosis (chọn talent để đổi) chưa chuyển được, vì nút talent không phải nút chữ.
 - Client chưa hiện blob/khí, đạn bay và hiệu ứng.
 
 ## 6. Rủi ro chính

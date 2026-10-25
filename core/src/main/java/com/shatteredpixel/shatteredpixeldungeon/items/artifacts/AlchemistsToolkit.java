@@ -26,6 +26,7 @@ import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.MagicImmune;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Talent;
+import com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopCommands;
 import com.shatteredpixel.shatteredpixeldungeon.items.rings.RingOfEnergy;
 import com.shatteredpixel.shatteredpixeldungeon.journal.Catalog;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
@@ -83,6 +84,7 @@ public class AlchemistsToolkit extends Artifact {
 			else if (cursed)                    GLog.w( Messages.get(this, "cursed") );
 			else if (warmUpDelay > 0)           GLog.w( Messages.get(this, "not_ready") );
 			else {
+				if (CoopCommands.openAlchemy(hero, this)) return; // COOP-HOOK: opens on that player's screen
 				AlchemyScene.assignToolkit(this);
 				Game.switchScene(AlchemyScene.class);
 			}

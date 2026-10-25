@@ -303,7 +303,15 @@ public class Game implements ApplicationListener {
 		Gdx.app.error("GAME", sw.toString());
 	}
 	
-	public static void runOnRenderThread(Callback c){
+	//COOP-HOOK: lets online coop decide whose screen (and which moment) a deferred callback is for
+	public interface CallbackWrapper {
+		Callback wrap( Callback c );
+	}
+	public static volatile CallbackWrapper callbackWrapper = null;
+
+	public static void runOnRenderThread(Callback original){
+		CallbackWrapper w = callbackWrapper; // COOP-HOOK
+		final Callback c = w == null ? original : w.wrap( original );
 		Gdx.app.postRunnable(new Runnable() {
 			@Override
 			public void run() {

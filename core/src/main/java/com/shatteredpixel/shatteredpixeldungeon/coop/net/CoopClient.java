@@ -32,6 +32,9 @@ import java.util.List;
 /**
  * The joining side: connects to a host, takes part in the lobby and receives game messages.
  * Callbacks come from the network thread.
+ *
+ * After a dropped connection, reconnect() connects again with the slot and token the host gave in
+ * welcome, and gets the same slot back (the host then sends a snapshot).
  */
 public class CoopClient implements NetConnection.Listener {
 
@@ -55,30 +58,58 @@ public class CoopClient implements NetConnection.Listener {
 	private volatile boolean running = false;
 	private int lobbySeq = 0;
 
+	//where and as whom we connected, and the host's token for our slot
+	private String host;
+	private int port;
+	private String name;
+	private volatile long token = 0;
+	private volatile boolean hasToken = false;
+
 	public CoopClient( int gameVersion, Events events ){
 		this.gameVersion = gameVersion;
 		this.events = events;
 	}
 
 	public void connect( String host, int port, String name, int timeoutMs ) throws IOException {
+		this.host = host;
+		this.port = port;
+		this.name = name;
+		open( timeoutMs, false );
+	}
+
+	//whether reconnect() can take our slot back
+	public boolean canRejoin(){
+		return hasToken && slot > 0 && host != null;
+	}
+
+	public void reconnect( int timeoutMs ) throws IOException {
+		open( timeoutMs, true );
+	}
+
+	private void open( int timeoutMs, boolean rejoin ) throws IOException {
 		Socket s = new Socket();
 		s.connect( new InetSocketAddress( host, port ), timeoutMs );
-		connection = new NetConnection( s, this );
+		NetConnection c = new NetConnection( s, this );
+		connection = c;
 		running = true;
-		connection.start( "coop-client" );
+		c.start( "coop-client" );
 
 		Bundle hello = NetConnection.message( CoopNet.HELLO );
 		hello.put( "protocol", CoopNet.PROTOCOL );
 		hello.put( "game", gameVersion );
 		hello.put( "name", name );
-		connection.send( hello );
+		if (rejoin){
+			hello.put( "slot", slot );
+			hello.put( "token", token );
+		}
+		c.send( hello );
 
-		Thread heartbeat = new Thread( this::heartbeatLoop, "coop-client-heartbeat" );
+		Thread heartbeat = new Thread( () -> heartbeatLoop( c ), "coop-client-heartbeat" );
 		heartbeat.setDaemon( true );
 		heartbeat.start();
 	}
 
-	private void heartbeatLoop(){
+	private void heartbeatLoop( NetConnection connection ){
 		while (running && connection.isOpen()){
 			try {
 				Thread.sleep( CoopNet.HEARTBEAT_MS );
@@ -133,6 +164,11 @@ public class CoopClient implements NetConnection.Listener {
 		return connection != null && connection.send( message );
 	}
 
+	//the connection breaks without saying goodbye, like a lost network (tests)
+	public void dropConnection(){
+		if (connection != null) connection.close( "dropped" );
+	}
+
 	public void disconnect(){
 		running = false;
 		if (connection != null){
@@ -146,6 +182,10 @@ public class CoopClient implements NetConnection.Listener {
 		switch (NetConnection.type( m )){
 			case CoopNet.WELCOME:
 				slot = m.getInt( "slot" );
+				if (m.contains( "token" )){
+					token = m.getLong( "token" );
+					hasToken = true;
+				}
 				events.onWelcome( slot );
 				return;
 			case CoopNet.REJECT:
@@ -180,6 +220,7 @@ public class CoopClient implements NetConnection.Listener {
 
 	@Override
 	public void onClosed( NetConnection c, String reason ){
+		if (c != connection) return; //an old connection, already replaced
 		running = false;
 		events.onDisconnected( reason );
 	}

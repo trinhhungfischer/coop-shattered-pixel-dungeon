@@ -83,6 +83,7 @@ import com.shatteredpixel.shatteredpixeldungeon.coop.Coop;
 import com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore;
 import com.shatteredpixel.shatteredpixeldungeon.coop.CoopDeaths;
 import com.shatteredpixel.shatteredpixeldungeon.coop.CoopLoot;
+import com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopCommands;
 import com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopRemote;
 import com.shatteredpixel.shatteredpixeldungeon.effects.CellEmitter;
 import com.shatteredpixel.shatteredpixeldungeon.effects.FloatingText;
@@ -1100,6 +1101,7 @@ public class Hero extends Char {
 				return false;
 			}
 
+			if (CoopCommands.openAlchemy(this, null)) return false; // COOP-HOOK: opens on that player's screen
 			AlchemyScene.clearToolkit();
 			ShatteredPixelDungeon.switchScene(AlchemyScene.class);
 			return false;

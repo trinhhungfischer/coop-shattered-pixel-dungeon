@@ -87,7 +87,7 @@ public class NetGameSim {
 		}
 		if (System.currentTimeMillis() - lastProgress > 120_000){
 			CoopSim.problem( (isHost ? "host" : "client") + " made no progress for 2 minutes in phase " + phase
-					+ " depth " + Dungeon.depth + (Dungeon.hero != null ? " pos " + Dungeon.hero.pos : "") + " | " + CoopSim.Driver.actorDump() );
+					+ " depth " + Dungeon.depth + (Dungeon.hero != null ? " pos " + Dungeon.hero.pos : "") + (isHost ? "" : " | " + CoopRemote.clientDebug()) + " | " + CoopSim.Driver.actorDump() );
 			CoopSim.finish();
 		}
 	}
@@ -123,6 +123,7 @@ public class NetGameSim {
 				if (!(Game.scene() instanceof GameScene) || Dungeon.hero == null || !CoopRemote.onlineHost()) return;
 				if (Dungeon.depth != lastDepth){
 					lastDepth = Dungeon.depth;
+					depthFrame = frames;
 					lastProgress = System.currentTimeMillis();
 					log( "now on depth " + Dungeon.depth );
 				}
@@ -133,11 +134,7 @@ public class NetGameSim {
 					return;
 				}
 				cheats();
-				if (!gaveScroll && Coop.size() > 1 && !Actor.processing()){
-					gaveScroll = true;
-					Coop.get(1).belongings.backpack.items.add( new com.shatteredpixel.shatteredpixeldungeon.items.scrolls.ScrollOfUpgrade().identify() );
-					log( "gave the client's hero a scroll of upgrade" );
-				}
+				if (Coop.size() > 1 && !Actor.processing()) hostScenario( Coop.get(1) );
 				Hero me = CoopRemote.localHero();
 				if (frames % 2000 == 0){
 					StringBuilder sb = new StringBuilder("state:");
@@ -160,8 +157,59 @@ public class NetGameSim {
 		}
 	}
 
+	//what the host sets up for the client's hero (render thread, the game isn't running):
+	// - at the start: a scroll of upgrade, three seeds, gold, and enough levels for talent points
+	// - on depth 2: a shopkeeper and an item for sale next to it
+	// - on depth 3: the alchemy screen, as if the hero had reached a pot
+	static boolean gaveItems = false, shopPlaced = false, alchemyOpened = false;
+	static String lastAlchemyLogged = "";
+	static int depthFrame = 0;
+
+	static void hostScenario( Hero h ){
+		if (!gaveItems){
+			gaveItems = true;
+			h.belongings.backpack.items.add( new com.shatteredpixel.shatteredpixeldungeon.items.scrolls.ScrollOfUpgrade().identify() );
+			h.belongings.backpack.items.add( new com.shatteredpixel.shatteredpixeldungeon.plants.Sungrass.Seed().quantity( 3 ) );
+			h.lvl = 3;
+			Dungeon.gold = 1000;
+			log( "gave the client's hero a scroll of upgrade, 3 seeds, level 3 and the party 1000 gold" );
+		}
+		if (!shopPlaced && Dungeon.depth == 2 && frames > depthFrame + 200 && com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.isWaiting( h )){
+			Level level = Dungeon.level;
+			int keeper = -1, ware = -1;
+			for (int n : PathFinder.NEIGHBOURS8){
+				int c = h.pos + n;
+				if (c < 0 || c >= level.length() || !level.passable[c] || level.pit[c] || Actor.findChar( c ) != null || level.heaps.get( c ) != null) continue;
+				if (keeper == -1){
+					keeper = c;
+				} else {
+					ware = c;
+					break;
+				}
+			}
+			if (keeper == -1 || ware == -1) return;
+			shopPlaced = true;
+			com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.Shopkeeper sk = new com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.Shopkeeper();
+			sk.pos = keeper;
+			GameScene.add( sk );
+			com.shatteredpixel.shatteredpixeldungeon.items.Heap heap = level.drop( new com.shatteredpixel.shatteredpixeldungeon.items.potions.PotionOfHealing().identify(), ware );
+			heap.type = com.shatteredpixel.shatteredpixeldungeon.items.Heap.Type.FOR_SALE;
+			log( "placed a shopkeeper at " + keeper + " and a potion for sale at " + ware + " next to the client's hero at " + h.pos );
+		}
+		//(a while after arriving: the new floor's snapshot goes out first)
+		if (!alchemyOpened && Dungeon.depth == 3 && frames > depthFrame + 200 && com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.isWaiting( h )){
+			alchemyOpened = true;
+			boolean sent = com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopCommands.openAlchemy( h, null );
+			log( "opened the alchemy screen for the client's hero: " + sent );
+		}
+		String r = com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopCommands.lastAlchemyResult;
+		if (!r.equals( lastAlchemyLogged )){
+			lastAlchemyLogged = r;
+			log( "alchemy: " + r );
+		}
+	}
+
 	//test cheats on the real game: heroes can't die and everyone knows the map
-	static boolean gaveScroll = false;
 
 	static void cheats(){
 		for (Hero h : Coop.aliveHeroes()) Buff.prolong( h, Invulnerability.class, 5f );
@@ -223,7 +271,18 @@ public class NetGameSim {
 					if (!scrollRead) CoopSim.problem( "the client's hero never got the scroll of upgrade" );
 					else if (itemAnswers == 0) CoopSim.problem( "reading the scroll of upgrade gave no item prompt" );
 					else if (after <= staffLevelBefore) CoopSim.problem( "the staff was not upgraded (level " + staffLevelBefore + " -> " + after + ")" );
+					checkScenario();
 					CoopSim.finish();
+					return;
+				}
+				if (CoopRemote.checksumMismatches != seenMismatches || CoopRemote.reconnects != seenReconnects){
+					seenMismatches = CoopRemote.checksumMismatches;
+					seenReconnects = CoopRemote.reconnects;
+					log( "frame " + frames + ": mismatches " + seenMismatches + ", reconnects " + seenReconnects + ", scene "
+							+ Game.scene().getClass().getSimpleName() + ", depth " + Dungeon.depth + ", updates " + CoopRemote.updatesApplied );
+				}
+				if (Game.scene() instanceof com.shatteredpixel.shatteredpixeldungeon.scenes.AlchemyScene){
+					doAlchemy();
 					return;
 				}
 				if (!(Game.scene() instanceof GameScene) || !CoopRemote.onlineClient() || Dungeon.hero == null) return;
@@ -236,6 +295,7 @@ public class NetGameSim {
 				if (answerPrompts()) return;
 				if (!CoopRemote.inputReady()) return;
 				if (frames % 3 != 0) return;
+				if (scenario()) return;
 				if (useItems()) return;
 				int cell = chooseCell( Dungeon.hero );
 				if (cell != -1){
@@ -277,7 +337,8 @@ public class NetGameSim {
 			}
 		}
 		com.shatteredpixel.shatteredpixeldungeon.items.weapon.melee.MagesStaff st = staff();
-		if (st != null && actions % 7 == 0){
+		if (st != null && actions % 7 == 0 && actions != lastZapAt){
+			lastZapAt = actions;
 			for (Mob m : Dungeon.level.mobs){
 				if (m.alignment == Char.Alignment.ENEMY && me.fieldOfView != null && me.fieldOfView[m.pos]
 						&& Dungeon.level.distance( me.pos, m.pos ) <= 5){
@@ -293,6 +354,7 @@ public class NetGameSim {
 	}
 
 	static int zapTarget = -1;
+	static int lastZapAt = -1;
 
 	//answers the host's prompt like a player would
 	static boolean answerPrompts(){
@@ -317,11 +379,174 @@ public class NetGameSim {
 			GameScene.cancel();
 			CoopRemote.answerItem( id, pick );
 		} else if (CoopRemote.PROMPT_OPT.equals( type )){
-			log( "option prompt " + id + ": choosing 0" );
+			int pick = 0;
+			String note = "";
+			if (shopStage <= 1 && CoopRemote.lastPromptTitle.contains( "Shopkeeper" )){
+				//(also when the bot bumped into the shopkeeper on its way)
+				if (shopStage == 0) goldBefore = Dungeon.gold;
+				pick = 1; //talk
+				shopStage = 2;
+				note = " (shop menu)";
+			} else if (shopStage == 2){
+				shopStage = 3;
+				note = " (shopkeeper's words)";
+			} else if (shopStage == 4){
+				shopStage = 5;
+				shopDoneFrame = frames;
+				goldAfterBuy = -1;
+				note = " (trade window)";
+			}
+			log( "option prompt " + id + " '" + CoopRemote.lastPromptTitle + "' " + java.util.Arrays.toString( CoopRemote.lastPromptOptions ) + ": choosing " + pick + note );
 			GameScene.cancel();
-			CoopRemote.answerOption( id, 0 );
+			CoopRemote.answerOption( id, pick );
 		}
 		return true;
+	}
+
+	// ---------------------------------------------------------------------------------
+	// Client scenario (M5): talents, a shop (deferred windows, a window without buttons, a
+	// trade window), alchemy, and a dropped connection
+	// ---------------------------------------------------------------------------------
+
+	static int seenMismatches = 0, seenReconnects = 0;
+	static int shopStage = 0; //1 asked the shopkeeper, 2 chose talk, 3 heard them, 4 asked to buy, 5 bought
+	static int goldBefore = -1, shopDoneFrame = 0, shopAskFrame = 0, goldAfterBuy = -1;
+	static boolean talentDone = false;
+	static String talentName = null;
+	static int talentBefore = -1;
+	static boolean dropped = false;
+	static boolean alchemyDone = false;
+	static int alchemyFrame = 0, potionsBefore = -1;
+
+	static boolean scenario(){
+		Hero me = Dungeon.hero;
+		Level level = Dungeon.level;
+		if (!talentDone && me.talentPointsAvailable( 1 ) > 0){
+			talentDone = true;
+			com.shatteredpixel.shatteredpixeldungeon.actors.hero.Talent t = me.talents.get( 0 ).keySet().iterator().next();
+			talentName = t.name();
+			talentBefore = me.talents.get( 0 ).get( t );
+			log( "spending a talent point on " + talentName + " (" + talentBefore + " points)" );
+			com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopCommands.upgradeTalent( me, t );
+			return true;
+		}
+		if (shopStage == 0){
+			for (Mob m : level.mobs){
+				if (m instanceof com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.Shopkeeper){
+					shopStage = 1;
+					shopAskFrame = frames;
+					goldBefore = Dungeon.gold;
+					log( "talking to the shopkeeper at " + m.pos + " (gold " + goldBefore + ")" );
+					CoopRemote.onCellSelected( m.pos );
+					return true;
+				}
+			}
+		}
+		if (shopStage == 3){
+			for (com.shatteredpixel.shatteredpixeldungeon.items.Heap h : level.heaps.valueList()){
+				if (h.type == com.shatteredpixel.shatteredpixeldungeon.items.Heap.Type.FOR_SALE){
+					shopStage = 4;
+					shopAskFrame = frames;
+					log( "buying " + h.peek().getClass().getSimpleName() + " at " + h.pos );
+					CoopRemote.onCellSelected( h.pos );
+					return true;
+				}
+			}
+		}
+		//a tap the host dropped (the hero wasn't waiting there yet): tap again, like a player would
+		if ((shopStage == 1 || shopStage == 4) && frames - shopAskFrame > 300){
+			shopAskFrame = frames;
+			for (Mob m : level.mobs){
+				if (shopStage == 1 && m instanceof com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.Shopkeeper){
+					log( "no answer from the shopkeeper yet, tapping again" );
+					CoopRemote.onCellSelected( m.pos );
+				}
+			}
+			for (com.shatteredpixel.shatteredpixeldungeon.items.Heap h : level.heaps.valueList()){
+				if (shopStage == 4 && h.type == com.shatteredpixel.shatteredpixeldungeon.items.Heap.Type.FOR_SALE){
+					log( "no trade window yet, tapping the item again" );
+					CoopRemote.onCellSelected( h.pos );
+				}
+			}
+			return true;
+		}
+		//the gold a moment after buying (the host's update has come by then)
+		if (shopStage == 5 && goldAfterBuy < 0 && frames > shopDoneFrame + 60){
+			goldAfterBuy = Dungeon.gold;
+			log( "gold after buying: " + goldBefore + " -> " + goldAfterBuy );
+		}
+		//stay with the shopkeeper until the shopping is done
+		if (shopStage >= 1 && shopStage < 5) return true;
+		if (!dropped && Dungeon.depth >= 2 && (shopStage == 5 && frames > shopDoneFrame + 100 || Dungeon.depth >= 3)){
+			dropped = true;
+			log( "dropping the connection" );
+			CoopOnline.client.dropConnection();
+			return true;
+		}
+		return false;
+	}
+
+	static int count( Class<?> cls ){
+		int n = 0;
+		for (com.shatteredpixel.shatteredpixeldungeon.items.Item i : com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopItems.all( Dungeon.hero )){
+			if (cls.isInstance( i )) n += i.quantity();
+		}
+		return n;
+	}
+
+	//the host opened the alchemy screen: brew the three seeds into a potion, then go back
+	static void doAlchemy(){
+		if (alchemyDone){
+			if (frames - alchemyFrame > 30){
+				log( "leaving the alchemy screen" );
+				com.shatteredpixel.shatteredpixeldungeon.ShatteredPixelDungeon.switchScene( GameScene.class );
+				alchemyFrame = Integer.MAX_VALUE / 2;
+			}
+			return;
+		}
+		alchemyDone = true;
+		alchemyFrame = frames;
+		potionsBefore = count( com.shatteredpixel.shatteredpixeldungeon.items.potions.Potion.class );
+		com.shatteredpixel.shatteredpixeldungeon.items.Item seeds = null;
+		for (com.shatteredpixel.shatteredpixeldungeon.items.Item i : com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopItems.all( Dungeon.hero )){
+			if (i instanceof com.shatteredpixel.shatteredpixeldungeon.plants.Sungrass.Seed) seeds = i;
+		}
+		if (seeds == null || seeds.quantity() < 3){
+			CoopSim.problem( "alchemy screen opened but the mirror has no three seeds" );
+			return;
+		}
+		java.util.ArrayList<com.shatteredpixel.shatteredpixeldungeon.items.Item> ingredients = new java.util.ArrayList<>();
+		for (int k = 0; k < 3; k++) ingredients.add( seeds.duplicate().quantity( 1 ) );
+		log( "in the alchemy screen: brewing 3 seeds (" + potionsBefore + " potions now)" );
+		com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopCommands.alchemyCombine( ingredients, 0 );
+	}
+
+	static void checkScenario(){
+		Hero me = Dungeon.hero;
+		log( "scenario: shop stage " + shopStage + ", gold " + goldBefore + " -> " + Dungeon.gold
+				+ ", healing potions " + count( com.shatteredpixel.shatteredpixeldungeon.items.potions.PotionOfHealing.class )
+				+ ", reconnects " + CoopRemote.reconnects + ", seeds " + count( com.shatteredpixel.shatteredpixeldungeon.plants.Sungrass.Seed.class )
+				+ ", potions " + potionsBefore + " -> " + count( com.shatteredpixel.shatteredpixeldungeon.items.potions.Potion.class ) );
+		if (!talentDone){
+			CoopSim.problem( "the client's hero never had a talent point" );
+		} else {
+			com.shatteredpixel.shatteredpixeldungeon.actors.hero.Talent t = com.shatteredpixel.shatteredpixeldungeon.actors.hero.Talent.valueOf( talentName );
+			Integer now = me.talents.get( 0 ).get( t );
+			log( "talent " + talentName + ": " + talentBefore + " -> " + now );
+			if (now == null || now != talentBefore + 1) CoopSim.problem( "talent " + talentName + " went " + talentBefore + " -> " + now + " on the host's hero" );
+		}
+		if (shopStage < 5) CoopSim.problem( "shopping stopped at stage " + shopStage );
+		else {
+			if (goldAfterBuy < 0 || goldAfterBuy >= goldBefore) CoopSim.problem( "buying cost nothing (gold " + goldBefore + " -> " + goldAfterBuy + ")" );
+			if (count( com.shatteredpixel.shatteredpixeldungeon.items.potions.PotionOfHealing.class ) == 0) CoopSim.problem( "the bought potion isn't in the hero's bag" );
+		}
+		if (!alchemyDone) CoopSim.problem( "the alchemy screen never opened on the client" );
+		else {
+			if (count( com.shatteredpixel.shatteredpixeldungeon.plants.Sungrass.Seed.class ) > 0) CoopSim.problem( "the seeds weren't used up by alchemy" );
+			if (count( com.shatteredpixel.shatteredpixeldungeon.items.potions.Potion.class ) <= potionsBefore) CoopSim.problem( "alchemy gave no potion" );
+		}
+		if (!dropped) CoopSim.problem( "the connection was never dropped" );
+		else if (CoopRemote.reconnects == 0) CoopSim.problem( "the client never got back in after dropping" );
 	}
 
 	// ---------------------------------------------------------------------------------
@@ -333,6 +558,18 @@ public class NetGameSim {
 	static int stuck = 0;
 
 	static int chooseCell( Hero me ){
+		int c = chooseCell0( me );
+		//tapping yourself on the stairs you came down would take the party back up: wait instead
+		LevelTransition here = Dungeon.level.getTransition( me.pos );
+		if (c == me.pos && here != null && here.type != LevelTransition.Type.REGULAR_EXIT){
+			me.rest( false );
+			actions++;
+			return -1;
+		}
+		return c;
+	}
+
+	static int chooseCell0( Hero me ){
 		Level level = Dungeon.level;
 		for (Mob m : level.mobs){
 			if (m.alignment == Char.Alignment.ENEMY && level.adjacent( me.pos, m.pos )) return m.pos;

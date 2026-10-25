@@ -36,12 +36,18 @@ import java.util.List;
  * game messages. The host player is always slot 0.
  *
  * Callbacks come from network threads; the UI/game side must hand them over to its own thread.
+ *
+ * Reconnecting (M5): every player gets a secret token in welcome. A player who drops out after
+ * the run started keeps their slot; a hello with that slot and token takes it back.
  */
 public class CoopHost implements NetConnection.Listener {
 
 	public interface Events {
 		default void onLobbyChanged( List<CoopNet.Player> players ){}
 		default void onPlayerLeft( int slot, String name, String reason ){}
+		//during the run: the player's connection dropped, their slot waits for them
+		default void onPlayerDropped( int slot, String name, String reason ){}
+		default void onPlayerRejoined( int slot, String name ){}
 		//any message that isn't part of the lobby protocol (game commands from M3 on)
 		default void onGameMessage( int slot, Bundle message ){}
 	}
@@ -54,6 +60,9 @@ public class CoopHost implements NetConnection.Listener {
 	private volatile boolean started = false;
 
 	private final NetConnection[] clients = new NetConnection[CoopNet.MAX_PLAYERS];
+	private final long[] tokens = new long[CoopNet.MAX_PLAYERS];
+	private final boolean[] dropped = new boolean[CoopNet.MAX_PLAYERS];
+	private final java.security.SecureRandom random = new java.security.SecureRandom();
 	private final ArrayList<CoopNet.Player> players = new ArrayList<>();
 	private final LanDiscovery.Beacon beacon;
 
@@ -103,6 +112,12 @@ public class CoopHost implements NetConnection.Listener {
 
 	public boolean isStarted(){
 		return started;
+	}
+
+	//whether this slot's player is connected (the host's own slot always is)
+	public synchronized boolean isConnected( int slot ){
+		if (slot == 0) return true;
+		return slot > 0 && slot < clients.length && clients[slot] != null;
 	}
 
 	public synchronized int playerCount(){
@@ -204,9 +219,24 @@ public class CoopHost implements NetConnection.Listener {
 	private void onHello( NetConnection c, Bundle m ){
 		String reason = null;
 		int slot = -1;
+		boolean rejoin = false;
+		String rejoinName = null;
 		synchronized (this){
 			if (m.getInt( "protocol" ) != CoopNet.PROTOCOL || m.getInt( "game" ) != gameVersion){
 				reason = "version";
+			} else if (started && m.contains( "token" )){
+				int s = m.getInt( "slot" );
+				if (s > 0 && s < clients.length && dropped[s] && clients[s] == null && tokens[s] == m.getLong( "token" )){
+					slot = s;
+					rejoin = true;
+					dropped[s] = false;
+					clients[s] = c;
+					c.slot = s;
+					CoopNet.Player p = player( s );
+					rejoinName = p == null ? "" : p.name;
+				} else {
+					reason = "started";
+				}
 			} else if (started){
 				reason = "started";
 			} else {
@@ -218,9 +248,10 @@ public class CoopHost implements NetConnection.Listener {
 				}
 				if (slot == -1) reason = "full";
 			}
-			if (reason == null){
+			if (reason == null && !rejoin){
 				clients[slot] = c;
 				c.slot = slot;
+				tokens[slot] = random.nextLong();
 				CoopNet.Player p = new CoopNet.Player();
 				p.slot = slot;
 				String name = m.getString( "name" );
@@ -237,25 +268,42 @@ public class CoopHost implements NetConnection.Listener {
 		}
 		Bundle welcome = NetConnection.message( CoopNet.WELCOME );
 		welcome.put( "slot", slot );
+		synchronized (this){
+			welcome.put( "token", tokens[slot] );
+		}
+		welcome.put( "rejoin", rejoin );
 		c.send( welcome );
-		lobbyChanged();
+		if (rejoin){
+			events.onPlayerRejoined( slot, rejoinName );
+		} else {
+			lobbyChanged();
+		}
 	}
 
 	@Override
 	public void onClosed( NetConnection c, String reason ){
 		String name = null;
 		int slot = c.slot;
+		boolean drop = false;
 		synchronized (this){
 			if (slot > 0 && clients[slot] == c){
 				clients[slot] = null;
 				CoopNet.Player p = player( slot );
 				if (p != null){
 					name = p.name;
-					players.remove( p );
+					if (started && running && !reason.equals( "left" )){
+						//the run goes on: keep the slot for them
+						dropped[slot] = true;
+						drop = true;
+					} else {
+						players.remove( p );
+					}
 				}
 			}
 		}
-		if (name != null){
+		if (drop){
+			events.onPlayerDropped( slot, name, reason );
+		} else if (name != null){
 			events.onPlayerLeft( slot, name, reason );
 			lobbyChanged();
 		}

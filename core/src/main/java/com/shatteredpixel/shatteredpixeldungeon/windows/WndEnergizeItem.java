@@ -23,6 +23,7 @@ package com.shatteredpixel.shatteredpixeldungeon.windows;
 
 import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
 import com.shatteredpixel.shatteredpixeldungeon.ShatteredPixelDungeon;
+import com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopCommands;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.items.EnergyCrystal;
 import com.shatteredpixel.shatteredpixeldungeon.items.EquipableItem;
@@ -132,6 +133,7 @@ public class WndEnergizeItem extends WndInfoItem {
 	}
 
 	public static void energizeAll(Item item ) {
+		if (CoopCommands.energize(item, true)) return; // COOP-HOOK: online, a command
 
 		if (item.isEquipped( Dungeon.hero ) && !((EquipableItem)item).doUnequip( Dungeon.hero, false )) {
 			return;
@@ -145,6 +147,7 @@ public class WndEnergizeItem extends WndInfoItem {
 		if (item.quantity() <= 1) {
 			energizeAll( item );
 		} else {
+			if (CoopCommands.energize(item, false)) return; // COOP-HOOK: online, a command
 			energize(item.detach( Dungeon.hero.belongings.backpack ));
 		}
 	}

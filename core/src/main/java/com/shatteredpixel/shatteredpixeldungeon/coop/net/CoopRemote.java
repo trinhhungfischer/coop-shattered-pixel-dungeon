@@ -169,6 +169,11 @@ public class CoopRemote {
 
 	private static volatile boolean applyingCommand = false;
 
+	//true while the host runs a command (the UI calls it made run directly)
+	static boolean applyingCommand(){
+		return applyingCommand;
+	}
+
 	//Hero.rest / Hero.search from the toolbar: online they become commands. Returns true if forwarded.
 	public static boolean forwardAction( Hero hero, int kind ){
 		if (applyingCommand || hero != localHero()) return false;
@@ -257,12 +262,27 @@ public class CoopRemote {
 		tasks.clear();
 		events.clear();
 		CoopTime.online = true;
+		CoopCommands.clear();
+		Game.callbackWrapper = deferredWrapper;
 		CoopOnline.host.setEvents( new CoopHost.Events() {
 			@Override
 			public void onGameMessage( int slot, Bundle message ) {
 				int idx = partyIndexOfSlot( slot );
 				if (idx < 0) return;
-				switch (NetConnection.type( message )){
+				String type = NetConnection.type( message );
+				if (type.equals( CELL ) || type.equals( ACT ) || type.equals( USE )){
+					hostTask( idx, () -> CoopCommands.closeAlchemy( Coop.get( idx ) ) );
+				}
+				switch (type){
+					case CoopCommands.TALENT:
+						hostTask( idx, () -> CoopCommands.onTalent( Coop.get( idx ), message ) );
+						break;
+					case CoopCommands.ALCHEMY:
+						hostTask( idx, () -> CoopCommands.onAlchemy( Coop.get( idx ), message ) );
+						break;
+					case CoopCommands.ENERGIZE:
+						hostTask( idx, () -> CoopCommands.onEnergize( Coop.get( idx ), message ) );
+						break;
 					case CELL:
 						final int cell = message.getInt( "cell" );
 						hostTask( idx, () -> { Hero h = Coop.get( idx ); if (CoopTime.isWaiting( h )) h.handle( cell ); } );
@@ -302,21 +322,66 @@ public class CoopRemote {
 			public void onPlayerLeft( int slot, String name, String reason ) {
 				events.add( "log|" + Messages.get( CoopRemote.class, "player_left", name ) );
 			}
+
+			@Override
+			public void onPlayerDropped( int slot, String name, String reason ) {
+				events.add( "log|" + Messages.get( CoopRemote.class, "player_dropped", name ) );
+			}
+
+			@Override
+			public void onPlayerRejoined( int slot, String name ) {
+				events.add( "log|" + Messages.get( CoopRemote.class, "player_back", name ) );
+				rejoined.add( slot );
+			}
 		});
+	}
+
+	//players who came back: they get a snapshot of the current state at the next safe point
+	private static final ConcurrentLinkedQueue<Integer> rejoined = new ConcurrentLinkedQueue<>();
+	//heroes of dropped players already given a wait this pass
+	private static final HashSet<Integer> autoWaiting = new HashSet<>();
+
+	//a dropped player's hero must not hold up a fight: while it shares a turn group with someone,
+	//it waits a turn whenever it is its turn
+	private static void waitForDropped(){
+		for (int i = 1; i < Coop.size() && i < slotsByPartyIndex.length; i++){
+			Hero h = Coop.get( i );
+			if (CoopOnline.host.isConnected( slotsByPartyIndex[i] ) || !h.isAlive() || Coop.isDead( h )) continue;
+			if (!CoopTime.isWaiting( h ) || autoWaiting.contains( i )) continue;
+			boolean linked = false;
+			for (Hero o : Coop.aliveHeroes()){
+				if (o != h && !Coop.isDead( o ) && CoopTime.sameGroup( h, o )) linked = true;
+			}
+			if (!linked) continue;
+			final int idx = i;
+			autoWaiting.add( idx );
+			hostTask( idx, () -> {
+				autoWaiting.remove( idx );
+				act( Coop.get( idx ), ACT_REST );
+			});
+		}
 	}
 
 	//Actor.process, at the top of every scheduling pass (actor thread, nothing is acting)
 	public static void beforeScan(){
 		if (!onlineHost() || Dungeon.level == null || Dungeon.hero == null) return;
 
+		waitForDropped();
 		parkForTasks();
 
 		if (Dungeon.level != sentLevel) snapshotNeeded = true;
 		long now = System.currentTimeMillis();
 		if (snapshotNeeded){
 			sendSnapshot();
-		} else if (now - lastUpdate >= UPDATE_MS){
-			sendUpdate();
+			rejoined.clear();
+		} else {
+			Integer slot;
+			while ((slot = rejoined.poll()) != null){
+				//same seq: the others' updates stay valid, and the returning client takes them from here
+				Bundle snap = snapshot( seq );
+				if (snap != null) CoopOnline.host.send( slot, snap );
+			}
+			if (now - lastUpdate >= UPDATE_MS) sendUpdate();
 		}
 	}
 
@@ -329,11 +394,19 @@ public class CoopRemote {
 	//the hero whose command is running: prompts for a remote hero go to that hero's player
 	private static volatile Hero promptHero = null;
 
-	private static void hostTask( int partyIndex, Runnable r ){
+	static void hostTask( int partyIndex, Runnable r ){
+		hostTask( partyIndex, r, false );
+	}
+
+	//evenIfDead: the task still runs (without its hero's prompts) once that hero has died
+	private static void hostTask( int partyIndex, Runnable r, boolean evenIfDead ){
 		tasks.add( () -> {
 			if (partyIndex < 0 || partyIndex >= Coop.size()) return;
 			Hero h = Coop.get( partyIndex );
-			if (!h.isAlive() || Coop.isDead( h )) return;
+			if (!h.isAlive() || Coop.isDead( h )){
+				if (evenIfDead) r.run();
+				return;
+			}
 			Hero before = promptHero;
 			promptHero = h;
 			applyingCommand = true;
@@ -348,6 +421,19 @@ public class CoopRemote {
 			}
 		});
 	}
+
+	//Game.runOnRenderThread: NPCs, shops and many items show their windows a frame later. A
+	//callback made for a remote hero (while it acts, or while its command runs) runs as that
+	//hero's task, so its windows go to its player and its choices run at a safe point.
+	private static Game.CallbackWrapper deferredWrapper = c -> {
+		if (!onlineHost()) return c;
+		Hero owner = promptHero;
+		if (owner == null && Thread.currentThread().getName().equals( "SHPD Actor Thread" )) owner = Dungeon.hero;
+		if (owner == null || owner == localHero()) return c;
+		final int idx = Coop.indexOf( owner );
+		if (idx <= 0) return c;
+		return () -> hostTask( idx, c::call, true );
+	};
 
 	//actor thread, top of a scheduling pass: wait here while the render thread runs the tasks
 	private static void parkForTasks(){
@@ -368,7 +454,11 @@ public class CoopRemote {
 
 	//GameScene.update on the host: run the queued commands while the game logic is parked
 	public static void hostRenderFrame(){
-		if (!onlineHost() || !parked) return;
+		if (!onlineHost()) return;
+		//once everyone is dead the game logic has stopped for good: what's left (the end of the
+		//run) runs straight away
+		boolean over = Coop.allDead() && !Actor.processing();
+		if (!parked && !over) return;
 		Runnable r;
 		while ((r = tasks.poll()) != null){
 			try {
@@ -400,7 +490,7 @@ public class CoopRemote {
 		return id;
 	}
 
-	private static void sendToHero( Hero h, Bundle m ){
+	static void sendToHero( Hero h, Bundle m ){
 		int idx = Coop.indexOf( h );
 		if (idx > 0 && idx < slotsByPartyIndex.length) CoopOnline.host.send( slotsByPartyIndex[idx], m );
 	}
@@ -477,10 +567,12 @@ public class CoopRemote {
 		return true;
 	}
 
-	//GameScene.show: option windows go to the remote hero's player; other windows aren't
-	//supported online yet, the player is told so
+	//GameScene.show: a remote hero's windows go to its player, as option prompts
 	public static boolean interceptWindow( com.shatteredpixel.shatteredpixeldungeon.ui.Window wnd ){
 		if (!promptForRemote() || wnd == null) return false;
+		//the window is never shown here: it must not catch the host's keys or keep a camera
+		com.watabou.input.KeyEvent.removeKeyListener( wnd );
+		if (wnd.camera != null) com.watabou.noosa.Camera.remove( wnd.camera );
 		if (wnd instanceof com.shatteredpixel.shatteredpixeldungeon.windows.WndOptions){
 			com.shatteredpixel.shatteredpixeldungeon.windows.WndOptions w = (com.shatteredpixel.shatteredpixeldungeon.windows.WndOptions) wnd;
 			String[] options = w.coopOptions == null ? new String[0] : w.coopOptions;
@@ -494,21 +586,20 @@ public class CoopRemote {
 			m.put( "enabled", enabled );
 			sendToHero( promptHero, m );
 		} else {
-			//any other window: its texts and buttons become an option prompt, and the answer
-			//clicks that button on the (never shown) window here
-			ArrayList<com.shatteredpixel.shatteredpixeldungeon.ui.StyledButton> buttons = new ArrayList<>();
+			//any other window: its texts and buttons (item buttons too) become an option prompt,
+			//and the answer clicks that button on the (never shown) window here. A window without
+			//buttons (quest texts) gets an OK that closes it.
+			ArrayList<com.watabou.noosa.ui.Component> buttons = new ArrayList<>();
 			ArrayList<String> texts = new ArrayList<>();
 			collectUi( wnd, buttons, texts );
+			String[] options = new String[Math.max( 1, buttons.size() )];
+			boolean[] enabled = new boolean[options.length];
 			if (buttons.isEmpty()){
-				Bundle m = NetConnection.message( "notice" );
-				m.put( "text", Messages.get( CoopRemote.class, "window_unsupported" ) );
-				sendToHero( promptHero, m );
-				return true;
+				options[0] = Messages.get( CoopRemote.class, "ok" );
+				enabled[0] = true;
 			}
-			String[] options = new String[buttons.size()];
-			boolean[] enabled = new boolean[buttons.size()];
-			for (int i = 0; i < options.length; i++){
-				options[i] = buttons.get( i ).text();
+			for (int i = 0; i < buttons.size(); i++){
+				options[i] = label( buttons.get( i ) );
 				enabled[i] = buttons.get( i ).active;
 			}
 			StringBuilder body = new StringBuilder();
@@ -529,15 +620,23 @@ public class CoopRemote {
 
 	private static class WindowButtons {
 		final com.shatteredpixel.shatteredpixeldungeon.ui.Window window;
-		final ArrayList<com.shatteredpixel.shatteredpixeldungeon.ui.StyledButton> buttons;
-		WindowButtons( com.shatteredpixel.shatteredpixeldungeon.ui.Window w, ArrayList<com.shatteredpixel.shatteredpixeldungeon.ui.StyledButton> b ){
+		final ArrayList<com.watabou.noosa.ui.Component> buttons;
+		WindowButtons( com.shatteredpixel.shatteredpixeldungeon.ui.Window w, ArrayList<com.watabou.noosa.ui.Component> b ){
 			window = w;
 			buttons = b;
 		}
 	}
 
+	private static String label( com.watabou.noosa.ui.Component b ){
+		if (b instanceof com.shatteredpixel.shatteredpixeldungeon.ui.StyledButton){
+			return ((com.shatteredpixel.shatteredpixeldungeon.ui.StyledButton) b).text();
+		}
+		Item item = ((com.shatteredpixel.shatteredpixeldungeon.ui.ItemButton) b).item();
+		return item == null ? "?" : Messages.titleCase( item.title() );
+	}
+
 	//texts and buttons of a window, in layout order
-	private static void collectUi( com.watabou.noosa.Group g, ArrayList<com.shatteredpixel.shatteredpixeldungeon.ui.StyledButton> buttons, ArrayList<String> texts ){
+	private static void collectUi( com.watabou.noosa.Group g, ArrayList<com.watabou.noosa.ui.Component> buttons, ArrayList<String> texts ){
 		java.util.List<?> members;
 		try {
 			java.lang.reflect.Field f = com.watabou.noosa.Group.class.getDeclaredField( "members" );
@@ -553,6 +652,9 @@ public class CoopRemote {
 			if (m instanceof com.shatteredpixel.shatteredpixeldungeon.ui.StyledButton){
 				com.shatteredpixel.shatteredpixeldungeon.ui.StyledButton b = (com.shatteredpixel.shatteredpixeldungeon.ui.StyledButton) m;
 				if (b.visible && b.text() != null && !b.text().isEmpty()) buttons.add( b );
+			} else if (m instanceof com.shatteredpixel.shatteredpixeldungeon.ui.ItemButton){
+				com.shatteredpixel.shatteredpixeldungeon.ui.ItemButton b = (com.shatteredpixel.shatteredpixeldungeon.ui.ItemButton) m;
+				if (b.visible && b.item() != null) buttons.add( b );
 			} else if (m instanceof com.shatteredpixel.shatteredpixeldungeon.ui.RenderedTextBlock){
 				String t = ((com.shatteredpixel.shatteredpixeldungeon.ui.RenderedTextBlock) m).text();
 				if (t != null && !t.isEmpty()) texts.add( t );
@@ -562,7 +664,7 @@ public class CoopRemote {
 		}
 	}
 
-	private static void click( com.shatteredpixel.shatteredpixeldungeon.ui.StyledButton b ){
+	private static void click( com.watabou.noosa.ui.Component b ){
 		for (Class<?> c = b.getClass(); c != null; c = c.getSuperclass()){
 			try {
 				java.lang.reflect.Method m = c.getDeclaredMethod( "onClick" );
@@ -604,10 +706,15 @@ public class CoopRemote {
 		} else if (handler instanceof WindowButtons){
 			int index = a.getInt( "index" );
 			WindowButtons wb = (WindowButtons) handler;
-			if (index >= 0 && index < wb.buttons.size() && wb.buttons.get( index ).active) click( wb.buttons.get( index ) );
+			if (index < 0) wb.window.onBackPressed();
+			else if (wb.buttons.isEmpty()) wb.window.hide();
+			else if (index < wb.buttons.size() && wb.buttons.get( index ).active) click( wb.buttons.get( index ) );
 		} else if (handler instanceof com.shatteredpixel.shatteredpixeldungeon.windows.WndOptions){
 			int index = a.getInt( "index" );
-			if (index < 0) return;
+			if (index < 0){
+				((com.shatteredpixel.shatteredpixeldungeon.windows.WndOptions) handler).onBackPressed();
+				return;
+			}
 			try {
 				java.lang.reflect.Method m = com.shatteredpixel.shatteredpixeldungeon.windows.WndOptions.class.getDeclaredMethod( "onSelect", int.class );
 				m.setAccessible( true );
@@ -618,25 +725,33 @@ public class CoopRemote {
 		}
 	}
 
-	private static void sendSnapshot(){
-		snapshotNeeded = false;
+	//the host's save files, as clients load them
+	private static Bundle snapshot( int seqValue ){
 		try {
 			Dungeon.saveAll();
 		} catch (IOException e){
 			ShatteredPixelDungeon.reportException( e );
-			return;
+			return null;
 		}
 		int slot = GamesInProgress.curSlot;
 		byte[] game = FileUtils.getFileHandle( GamesInProgress.gameFile( slot ) ).readBytes();
 		byte[] level = FileUtils.getFileHandle( GamesInProgress.depthFile( slot, Dungeon.depth, Dungeon.branch ) ).readBytes();
 
 		Bundle m = NetConnection.message( SNAP );
-		m.put( "seq", ++seq );
+		m.put( "seq", seqValue );
 		m.put( "game", Base64.getEncoder().encodeToString( game ) );
 		m.put( "level", Base64.getEncoder().encodeToString( level ) );
 		m.put( "depth", Dungeon.depth );
 		m.put( "branch", Dungeon.branch );
 		m.put( "party", slotsByPartyIndex );
+		return m;
+	}
+
+	private static void sendSnapshot(){
+		snapshotNeeded = false;
+		Bundle m = snapshot( seq + 1 );
+		if (m == null) return;
+		seq++;
 		CoopOnline.host.broadcast( m );
 
 		sentLevel = Dungeon.level;
@@ -709,6 +824,9 @@ public class CoopRemote {
 			waiting[i] = h.isAlive() && !Coop.isDead( h ) && CoopTime.isWaiting( h );
 		}
 		m.put( "waiting", waiting );
+		//shared by the party
+		m.put( "gold", Dungeon.gold );
+		m.put( "energy", Dungeon.energy );
 
 		if (lastUpdate - lastHeroBundles >= HERO_BUNDLE_MS){
 			lastHeroBundles = lastUpdate;
@@ -782,10 +900,23 @@ public class CoopRemote {
 		clientInGame = false;
 		clientSeq = -1;
 		incoming.clear();
+		gaveUp = false;
+		reconnecting = false;
 		CoopOnline.client.setEvents( new CoopClient.Events() {
 			@Override
 			public void onGameMessage( Bundle message ) {
 				incoming.add( message );
+			}
+
+			@Override
+			public void onWelcome( int slot ) {
+				//only seen again after reconnecting
+				incoming.add( NetConnection.message( "rejoined" ) );
+			}
+
+			@Override
+			public void onRejected( String reason ) {
+				incoming.add( NetConnection.message( "gaveup" ) );
 			}
 
 			@Override
@@ -805,23 +936,47 @@ public class CoopRemote {
 		while ((m = incoming.peek()) != null){
 			String type = NetConnection.type( m );
 			if (type.equals( SNAP )){
+				//one snapshot at a time: a newer one waits until the last one has loaded
+				if (Game.scene() instanceof InterlevelScene) return;
 				incoming.poll();
+				awaitingSnapshot = false;
 				loadSnapshot( m );
 				//updates for this snapshot are applied once its scene is up
 				return;
 			}
 			if (type.equals( "lost" )){
 				incoming.poll();
-				clientInGame = false;
-				CoopOnline.leave();
-				ShatteredPixelDungeon.scene().addToFront( new WndMessage( Messages.get( CoopRemote.class, "lost" ) ) );
+				if (clientInGame && CoopOnline.client != null && CoopOnline.client.canRejoin()){
+					startReconnecting();
+					continue;
+				}
+				giveUp();
 				return;
 			}
-			if (!(Game.scene() instanceof GameScene) || Dungeon.level == null || !clientInGame) return;
+			if (type.equals( "gaveup" )){
+				incoming.poll();
+				giveUp();
+				return;
+			}
+			if (type.equals( "rejoined" )){
+				incoming.poll();
+				reconnecting = false;
+				//what the host sends before our snapshot is about things this mirror missed
+				awaitingSnapshot = true;
+				reconnects++;
+				if (reconnectWindow != null){
+					reconnectWindow.hide();
+					reconnectWindow = null;
+				}
+				GLog.p( Messages.get( CoopRemote.class, "reconnected" ) );
+				continue;
+			}
+			//(loadingSnapshot: the scene switch only happens next frame, the mirror is still the old one)
+			if (!(Game.scene() instanceof GameScene) || Dungeon.level == null || !clientInGame || loadingSnapshot) return;
 			incoming.poll();
 			switch (type){
 				case UPD:
-					if (m.getInt( "seq" ) == clientSeq) applyUpdate( m );
+					if (m.getInt( "seq" ) == clientSeq && !awaitingSnapshot) applyUpdate( m );
 					break;
 				case PROMPT_CELL: case PROMPT_ITEM: case PROMPT_OPT:
 					showPrompt( type, m );
@@ -829,8 +984,77 @@ public class CoopRemote {
 				case "notice":
 					GLog.w( m.getString( "text" ) );
 					break;
+				case CoopCommands.ALCH_OPEN:
+					CoopCommands.showAlchemy( m );
+					//the rest waits until the player is back from the alchemy screen
+					return;
 			}
 		}
+	}
+
+	// --- reconnecting after the connection dropped ---
+
+	private static final long RECONNECT_FOR_MS = 60_000;
+	private static final long RECONNECT_EVERY_MS = 2_000;
+	private static volatile boolean reconnecting = false;
+	private static boolean awaitingSnapshot = false;
+	private static volatile boolean loadingSnapshot = false;
+
+	//client state for test reports
+	public static String clientDebug(){
+		Hero me = localHero();
+		return "scene=" + Game.scene().getClass().getSimpleName() + " inGame=" + clientInGame + " loading=" + loadingSnapshot
+				+ " awaitingSnap=" + awaitingSnapshot + " reconnecting=" + reconnecting + " seq=" + clientSeq
+				+ " queued=" + incoming.size() + (incoming.peek() == null ? "" : " next=" + NetConnection.type( incoming.peek() ) + "/" + incoming.peek().getInt( "seq" ))
+				+ " ready=" + (me != null && me.ready) + " connected=" + (CoopOnline.client != null && CoopOnline.client.isConnected());
+	}
+	private static WndMessage reconnectWindow = null;
+	//times this client got back in (tests read it)
+	public static volatile int reconnects = 0;
+
+	private static void startReconnecting(){
+		if (reconnecting) return;
+		reconnecting = true;
+		Hero me = localHero();
+		if (me != null) me.ready = false;
+		if (reconnectWindow == null){
+			reconnectWindow = new WndMessage( Messages.get( CoopRemote.class, "reconnecting" ) );
+			ShatteredPixelDungeon.scene().addToFront( reconnectWindow );
+		}
+		final CoopClient client = CoopOnline.client;
+		Thread t = new Thread( () -> {
+			long until = System.currentTimeMillis() + RECONNECT_FOR_MS;
+			while (System.currentTimeMillis() < until && CoopOnline.client == client){
+				try {
+					Thread.sleep( RECONNECT_EVERY_MS );
+					client.reconnect( (int) RECONNECT_EVERY_MS );
+					//the host answers with welcome (or reject: lost again) and a snapshot
+					return;
+				} catch (IOException e){
+					//host not reachable yet
+				} catch (InterruptedException e){
+					return;
+				}
+			}
+			incoming.add( NetConnection.message( "gaveup" ) );
+		}, "coop-reconnect" );
+		t.setDaemon( true );
+		t.start();
+	}
+
+	private static boolean gaveUp = false;
+
+	private static void giveUp(){
+		if (gaveUp) return;
+		gaveUp = true;
+		reconnecting = false;
+		clientInGame = false;
+		if (reconnectWindow != null){
+			reconnectWindow.hide();
+			reconnectWindow = null;
+		}
+		CoopOnline.leave();
+		ShatteredPixelDungeon.scene().addToFront( new WndMessage( Messages.get( CoopRemote.class, "lost" ) ) );
 	}
 
 	private static void loadSnapshot( Bundle m ){
@@ -843,6 +1067,7 @@ public class CoopRemote {
 		GamesInProgress.setUnknown( slot );
 		GamesInProgress.curSlot = slot;
 		clientInGame = true;
+		loadingSnapshot = true;
 		resyncAsked = false;
 		InterlevelScene.mode = InterlevelScene.Mode.CONTINUE;
 		Game.switchScene( InterlevelScene.class );
@@ -851,6 +1076,7 @@ public class CoopRemote {
 	//CoopCore.onGameLoaded: the client plays its own hero
 	public static void afterGameLoaded(){
 		if (!onlineClient()) return;
+		loadingSnapshot = false;
 		int i = localPartyIndex();
 		if (i >= 0 && i < Coop.size()) Dungeon.hero = Coop.get( i );
 		Actor.coopClientIds();
@@ -942,6 +1168,11 @@ public class CoopRemote {
 			}
 		}
 
+		if (m.contains( "gold" )){
+			Dungeon.gold = m.getInt( "gold" );
+			Dungeon.energy = m.getInt( "energy" );
+		}
+
 		if (m.contains( "ev" )){
 			for (String e : m.getStringArray( "ev" )) replayEvent( e );
 		}
@@ -1000,6 +1231,10 @@ public class CoopRemote {
 		to.exp = from.exp;
 		to.STR = from.STR;
 		to.pos = from.pos;
+		to.subClass = from.subClass;
+		to.armorAbility = from.armorAbility;
+		to.talents = from.talents;
+		to.metamorphedTalents = from.metamorphedTalents;
 		boolean mine = to == localHero();
 		String[] slots = new String[com.shatteredpixel.shatteredpixeldungeon.QuickSlot.SIZE];
 		if (mine){
@@ -1054,11 +1289,17 @@ public class CoopRemote {
 	public static volatile String lastPromptType = null;
 	public static volatile int lastPromptId = -1;
 	public static volatile String[] lastPromptPaths = new String[0];
+	public static volatile String[] lastPromptOptions = new String[0];
+	public static volatile String lastPromptTitle = "";
 	public static volatile int promptsShown = 0;
 
 	private static void showPrompt( String type, Bundle m ){
 		final int id = m.getInt( "id" );
 		final String text = m.getString( "text" );
+		if (type.equals( PROMPT_OPT )){
+			lastPromptOptions = m.getStringArray( "options" );
+			lastPromptTitle = m.getString( "title" );
+		}
 		lastPromptType = type;
 		lastPromptId = id;
 		promptsShown++;
@@ -1144,6 +1385,7 @@ public class CoopRemote {
 	}
 
 	public static void leaveGame(){
+		if (Game.callbackWrapper == deferredWrapper) Game.callbackWrapper = null;
 		hostInGame = false;
 		clientInGame = false;
 		CoopTime.online = false;

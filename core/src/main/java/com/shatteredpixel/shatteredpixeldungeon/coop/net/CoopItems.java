@@ -93,7 +93,7 @@ public class CoopItems {
 	}
 
 	//items in bags, bags included, in bag order
-	private static List<Item> bagItems( Hero h ){
+	static List<Item> bagItems( Hero h ){
 		ArrayList<Item> list = new ArrayList<>();
 		collect( h.belongings.backpack, list );
 		return list;
