@@ -32,9 +32,10 @@ import java.util.List;
 /**
  * Naming a hero's items the same way on the host and on a client. Equipped slots are
  * w (weapon), a (armor), f (artifact), m (misc), r (ring), s (second weapon). Items in bags are
- * named by what they are, not where: "i:<class>|<level>|<quantity>|<n>" is the n-th such item.
- * Bag order can differ between the host and a client's mirror (restoring a backpack re-sorts
- * and merges items), so positions would not match.
+ * named by what they are, not where: "i:<class>|<level>|<n>" is the n-th such item. Bag order
+ * can differ between the host and a client's mirror (restoring a backpack re-sorts and merges
+ * items), so positions would not match. Quantities aren't part of the name: a stack can grow on
+ * the host (a pickup) before the mirror hears of it.
  */
 public class CoopItems {
 
@@ -57,7 +58,7 @@ public class CoopItems {
 	}
 
 	private static String signature( Item item ){
-		return item.getClass().getName() + "|" + item.level() + "|" + item.quantity();
+		return item.getClass().getName() + "|" + item.level();
 	}
 
 	public static Item at( Hero h, String path ){

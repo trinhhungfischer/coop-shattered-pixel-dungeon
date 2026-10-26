@@ -87,7 +87,7 @@ public class NetGameSim {
 		}
 		if (System.currentTimeMillis() - lastProgress > 120_000){
 			CoopSim.problem( (isHost ? "host" : "client") + " made no progress for 2 minutes in phase " + phase
-					+ " depth " + Dungeon.depth + (Dungeon.hero != null ? " pos " + Dungeon.hero.pos : "") + (isHost ? "" : " | " + CoopRemote.clientDebug()) + " | " + CoopSim.Driver.actorDump() );
+					+ " depth " + Dungeon.depth + (Dungeon.hero != null ? " pos " + Dungeon.hero.pos : "") + (isHost ? "" : " | " + CoopRemote.clientDebug() + " | replay error: " + CoopRemote.lastReplayError) + " | " + CoopSim.Driver.actorDump() );
 			CoopSim.finish();
 		}
 	}
@@ -116,6 +116,7 @@ public class NetGameSim {
 				GamesInProgress.curSlot = 1;
 				CoopOnlineGame.start();
 				log( "started with " + CoopOnline.players.size() + " players" );
+				com.shatteredpixel.shatteredpixeldungeon.utils.GLog.update.add( text -> { log( "glog: " + text ); return false; } );
 				lastProgress = System.currentTimeMillis();
 				phase = 2;
 				return;
@@ -128,7 +129,9 @@ public class NetGameSim {
 					log( "now on depth " + Dungeon.depth );
 				}
 				if (Dungeon.depth >= targetDepth){
-					log( "reached depth " + Dungeon.depth + " after " + actions + " actions, closing the session" );
+					log( "reached depth " + Dungeon.depth + " after " + actions + " actions, closing the session; host clicks " + safeClicks + " (" + unsafeClicks + " outside a safe point), bolts sent " + CoopRemote.missilesSent );
+					if (safeClicks == 0) CoopSim.problem( "the host's clicks never ran" );
+					if (unsafeClicks > 0) CoopSim.problem( unsafeClicks + " host clicks ran while the game logic was running" );
 					CoopOnline.leave();
 					CoopSim.finish();
 					return;
@@ -164,15 +167,33 @@ public class NetGameSim {
 	static boolean gaveItems = false, shopPlaced = false, alchemyOpened = false;
 	static String lastAlchemyLogged = "";
 	static int depthFrame = 0;
+	static boolean gasPlaced = false;
+	static int lastClickAt = 0, safeClicks = 0, unsafeClicks = 0;
 
 	static void hostScenario( Hero h ){
 		if (!gaveItems){
 			gaveItems = true;
 			h.belongings.backpack.items.add( new com.shatteredpixel.shatteredpixeldungeon.items.scrolls.ScrollOfUpgrade().identify() );
 			h.belongings.backpack.items.add( new com.shatteredpixel.shatteredpixeldungeon.plants.Sungrass.Seed().quantity( 3 ) );
+			h.belongings.backpack.items.add( new com.shatteredpixel.shatteredpixeldungeon.items.scrolls.exotic.ScrollOfMetamorphosis().identify() );
 			h.lvl = 3;
 			Dungeon.gold = 1000;
 			log( "gave the client's hero a scroll of upgrade, 3 seeds, level 3 and the party 1000 gold" );
+		}
+		if (!gasPlaced && Dungeon.depth == 1 && frames > depthFrame + 300){
+			gasPlaced = true;
+			int cell = h.pos + Dungeon.level.width();
+			if (cell >= Dungeon.level.length() || Dungeon.level.solid[cell]) cell = h.pos;
+			GameScene.add( com.shatteredpixel.shatteredpixeldungeon.actors.blobs.Blob.seed( cell, 300, com.shatteredpixel.shatteredpixeldungeon.actors.blobs.ToxicGas.class ) );
+			log( "released toxic gas at " + cell + " next to the client's hero" );
+		}
+		//the host player's own button clicks must run while the game logic is parked
+		if (actions > lastClickAt + 40){
+			lastClickAt = actions;
+			com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopRemote.uiClick( () -> {
+				safeClicks++;
+				if (!com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopRemote.atSafePoint()) unsafeClicks++;
+			});
 		}
 		if (!shopPlaced && Dungeon.depth == 2 && frames > depthFrame + 200 && com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.isWaiting( h )){
 			Level level = Dungeon.level;
@@ -281,6 +302,13 @@ public class NetGameSim {
 					log( "frame " + frames + ": mismatches " + seenMismatches + ", reconnects " + seenReconnects + ", scene "
 							+ Game.scene().getClass().getSimpleName() + ", depth " + Dungeon.depth + ", updates " + CoopRemote.updatesApplied );
 				}
+				if (!sawGas && Dungeon.level != null){
+					com.shatteredpixel.shatteredpixeldungeon.actors.blobs.Blob gas = Dungeon.level.blobs.get( com.shatteredpixel.shatteredpixeldungeon.actors.blobs.ToxicGas.class );
+					if (gas != null && gas.volume > 0){
+						sawGas = true;
+						log( "the mirror shows toxic gas (volume " + gas.volume + ")" );
+					}
+				}
 				if (Game.scene() instanceof com.shatteredpixel.shatteredpixeldungeon.scenes.AlchemyScene){
 					doAlchemy();
 					return;
@@ -292,6 +320,7 @@ public class NetGameSim {
 					log( "mirror on depth " + Dungeon.depth + " as " + Dungeon.hero.heroClass + " (party index " + CoopRemote.localPartyIndex() + ")" );
 					if (Dungeon.hero.heroClass != HeroClass.MAGE) CoopSim.problem( "client controls a " + Dungeon.hero.heroClass + ", expected its Mage" );
 				}
+				if (frames % 1500 == 0) log( "frame " + frames + " actions " + actions + " shop " + shopStage + " | " + CoopRemote.clientDebug() );
 				if (answerPrompts()) return;
 				if (!CoopRemote.inputReady()) return;
 				if (frames % 3 != 0) return;
@@ -336,12 +365,24 @@ public class NetGameSim {
 				}
 			}
 		}
+		if (scrollRead && !metaRead && actions > 30 && (shopStage == 0 || shopStage == 5)){
+			for (com.shatteredpixel.shatteredpixeldungeon.items.Item i : com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopItems.all( me )){
+				if (i instanceof com.shatteredpixel.shatteredpixeldungeon.items.scrolls.exotic.ScrollOfMetamorphosis){
+					metaRead = true;
+					log( "reading the scroll of metamorphosis" );
+					CoopRemote.useItem( i, me, com.shatteredpixel.shatteredpixeldungeon.items.scrolls.Scroll.AC_READ );
+					actions++;
+					return true;
+				}
+			}
+		}
 		com.shatteredpixel.shatteredpixeldungeon.items.weapon.melee.MagesStaff st = staff();
 		if (st != null && actions % 7 == 0 && actions != lastZapAt){
 			lastZapAt = actions;
 			for (Mob m : Dungeon.level.mobs){
 				if (m.alignment == Char.Alignment.ENEMY && me.fieldOfView != null && me.fieldOfView[m.pos]
-						&& Dungeon.level.distance( me.pos, m.pos ) <= 5){
+						&& Dungeon.level.distance( me.pos, m.pos ) <= 5
+						&& staffCharges( st ) > 0){
 					zapTarget = m.pos;
 					zaps++;
 					CoopRemote.useItem( st, me, com.shatteredpixel.shatteredpixeldungeon.items.weapon.melee.MagesStaff.AC_ZAP );
@@ -354,6 +395,19 @@ public class NetGameSim {
 	}
 
 	static int zapTarget = -1;
+
+	//the staff's wand charges (the wand is private to the staff)
+	static int staffCharges( com.shatteredpixel.shatteredpixeldungeon.items.weapon.melee.MagesStaff st ){
+		try {
+			java.lang.reflect.Field f = com.shatteredpixel.shatteredpixeldungeon.items.weapon.melee.MagesStaff.class.getDeclaredField( "wand" );
+			f.setAccessible( true );
+			com.shatteredpixel.shatteredpixeldungeon.items.wands.Wand w = (com.shatteredpixel.shatteredpixeldungeon.items.wands.Wand) f.get( st );
+			return w == null ? 0 : w.curCharges;
+		} catch (Exception e){
+			return 0;
+		}
+	}
+	static boolean metaRead = false, sawGas = false;
 	static int lastZapAt = -1;
 
 	//answers the host's prompt like a player would
@@ -365,8 +419,9 @@ public class NetGameSim {
 		if (CoopRemote.PROMPT_CELL.equals( type )){
 			cellAnswers++;
 			log( "cell prompt " + id + ": aiming at " + zapTarget );
-			GameScene.cancelCellSelector();
+			//answer first: closing the selector answers "cancelled", which the host then ignores
 			CoopRemote.answerCell( id, zapTarget );
+			GameScene.cancelCellSelector();
 		} else if (CoopRemote.PROMPT_ITEM.equals( type )){
 			itemAnswers++;
 			String[] paths = CoopRemote.lastPromptPaths;
@@ -416,7 +471,7 @@ public class NetGameSim {
 	static int talentBefore = -1;
 	static boolean dropped = false;
 	static boolean alchemyDone = false;
-	static int alchemyFrame = 0, potionsBefore = -1;
+	static int alchemyFrame = 0, potionsBefore = -1, seedsBefore = 0;
 
 	static boolean scenario(){
 		Hero me = Dungeon.hero;
@@ -425,7 +480,7 @@ public class NetGameSim {
 			talentDone = true;
 			com.shatteredpixel.shatteredpixeldungeon.actors.hero.Talent t = me.talents.get( 0 ).keySet().iterator().next();
 			talentName = t.name();
-			talentBefore = me.talents.get( 0 ).get( t );
+			talentBefore = me.talentPointsSpent( 1 );
 			log( "spending a talent point on " + talentName + " (" + talentBefore + " points)" );
 			com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopCommands.upgradeTalent( me, t );
 			return true;
@@ -507,6 +562,7 @@ public class NetGameSim {
 		alchemyDone = true;
 		alchemyFrame = frames;
 		potionsBefore = count( com.shatteredpixel.shatteredpixeldungeon.items.potions.Potion.class );
+		seedsBefore = count( com.shatteredpixel.shatteredpixeldungeon.plants.Sungrass.Seed.class );
 		com.shatteredpixel.shatteredpixeldungeon.items.Item seeds = null;
 		for (com.shatteredpixel.shatteredpixeldungeon.items.Item i : com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopItems.all( Dungeon.hero )){
 			if (i instanceof com.shatteredpixel.shatteredpixeldungeon.plants.Sungrass.Seed) seeds = i;
@@ -530,10 +586,9 @@ public class NetGameSim {
 		if (!talentDone){
 			CoopSim.problem( "the client's hero never had a talent point" );
 		} else {
-			com.shatteredpixel.shatteredpixeldungeon.actors.hero.Talent t = com.shatteredpixel.shatteredpixeldungeon.actors.hero.Talent.valueOf( talentName );
-			Integer now = me.talents.get( 0 ).get( t );
-			log( "talent " + talentName + ": " + talentBefore + " -> " + now );
-			if (now == null || now != talentBefore + 1) CoopSim.problem( "talent " + talentName + " went " + talentBefore + " -> " + now + " on the host's hero" );
+			int now = me.talentPointsSpent( 1 );
+			log( "tier 1 talent points spent: " + talentBefore + " -> " + now + ", metamorphosed " + me.metamorphedTalents );
+			if (now != talentBefore + 1) CoopSim.problem( "tier 1 talent points went " + talentBefore + " -> " + now + " on the host's hero" );
 		}
 		if (shopStage < 5) CoopSim.problem( "shopping stopped at stage " + shopStage );
 		else {
@@ -542,9 +597,14 @@ public class NetGameSim {
 		}
 		if (!alchemyDone) CoopSim.problem( "the alchemy screen never opened on the client" );
 		else {
-			if (count( com.shatteredpixel.shatteredpixeldungeon.plants.Sungrass.Seed.class ) > 0) CoopSim.problem( "the seeds weren't used up by alchemy" );
+			if (count( com.shatteredpixel.shatteredpixeldungeon.plants.Sungrass.Seed.class ) >= seedsBefore) CoopSim.problem( "the seeds weren't used up by alchemy" );
 			if (count( com.shatteredpixel.shatteredpixeldungeon.items.potions.Potion.class ) <= potionsBefore) CoopSim.problem( "alchemy gave no potion" );
 		}
+		if (!metaRead) CoopSim.problem( "the client never read the scroll of metamorphosis" );
+		else if (me.metamorphedTalents.isEmpty()) CoopSim.problem( "metamorphosis changed no talent" );
+		log( "effects: gas seen " + sawGas + " (" + CoopRemote.blobsApplied + " gas updates), " + CoopRemote.missilesReplayed + " missiles/bolts drawn; last replay error: " + CoopRemote.lastReplayError );
+		if (!sawGas) CoopSim.problem( "the mirror never showed the host's toxic gas" );
+		if (zaps > 0 && CoopRemote.missilesReplayed == 0) CoopSim.problem( "zapped " + zaps + " times but no bolt was drawn" );
 		if (!dropped) CoopSim.problem( "the connection was never dropped" );
 		else if (CoopRemote.reconnects == 0) CoopSim.problem( "the client never got back in after dropping" );
 	}

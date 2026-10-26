@@ -105,11 +105,17 @@ Phần này làm và kiểm thử **trong hotseat trước** (bot headless), r�
   - Trong lúc mất kết nối, nếu hero của người đó đang chung nhóm lượt với ai, nó tự chờ một lượt mỗi khi tới phiên, để trận đánh không bị treo.
 - **Kiểm thử:** `netGameSim -PnetDepth=4`. Client nhận điểm talent, nói chuyện với shopkeeper (menu, lời nói, cửa sổ mua), mua bình máu (mất 150 vàng), tự ngắt mạng rồi nối lại, sau đó nấu 3 hạt giống thành thuốc. Mọi kết quả được đối chiếu với host.
 
+**Sau M5:**
+- **Khí và vùng hiệu ứng trên sàn (Blob):** mỗi bản cập nhật gửi danh sách ô và cường độ của từng loại blob, chỉ khi có thay đổi. Client tạo blob nếu chưa có và chỉ vẽ nó, không bao giờ cho nó hành động.
+- **Đạn bay và đạn phép:** hook ở `MissileSprite.reset` và `MagicMissile.reset` (bản dùng `PointF`) gửi toạ độ điểm đầu và điểm cuối. Client vẽ lại mà không có callback.
+- **Click của người chơi host:** `ui.Button` gọi `CoopRemote.uiClick`. Khi online và đang ở `GameScene`, click chạy như một task lúc logic game dừng ở điểm an toàn, giống thao tác chạm bản đồ. Host đang là khán giả (hero đã chết) thì click chạy ngay.
+- **Metamorphosis:** nút talent cũng được chuyển (nhãn là tên talent). Cả bốn bước (chọn talent, xác nhận, chọn talent thay thế, xác nhận) đều hiện trên máy người chơi.
+
 **Hạn chế còn lại:**
-- Nút bấm trong cửa sổ của chính người chơi host vẫn chạy thẳng trên UI thread.
 - Kết quả alchemy ngẫu nhiên có thể hiện khác trên màn hình client cho tới khi túi đồ thật từ host về.
-- Metamorphosis (chọn talent để đổi) chưa chuyển được, vì nút talent không phải nút chữ.
-- Client chưa hiện blob/khí, đạn bay và hiệu ứng.
+- Khi người chơi host dùng alchemy, game dừng với mọi người.
+- Nhấn giữ (long click) của host vẫn chạy ngay, vì game cần kết quả trả về của nó ngay lúc đó.
+- Các hiệu ứng nhỏ khác (tia sét, tia sáng, hạt bụi, rung màn hình) chưa hiện trên client.
 
 ## 6. Rủi ro chính
 

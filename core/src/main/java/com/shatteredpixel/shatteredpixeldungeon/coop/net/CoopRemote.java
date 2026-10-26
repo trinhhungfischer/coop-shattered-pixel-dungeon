@@ -225,6 +225,22 @@ public class CoopRemote {
 		hostTask( 0, () -> item.execute( Coop.get(0), action ) );
 	}
 
+	//ui.Button clicks: online, the host player's clicks in the game run at a safe point, like their
+	//taps on the map, so a window button can't change the game while another hero's turn runs
+	public static void uiClick( Runnable click ){
+		if (!onlineHost() || applyingCommand || !(Game.scene() instanceof GameScene)){
+			click.run();
+			return;
+		}
+		Hero me = localHero();
+		if (me == null || !me.isAlive() || Coop.isDead( me )){
+			//a spectating host has no turns to wait for
+			click.run();
+			return;
+		}
+		hostTask( 0, click );
+	}
+
 	//GameScene.update: whether the player may give input now
 	public static boolean inputReady(){
 		if (onlineHost()){
@@ -435,6 +451,11 @@ public class CoopRemote {
 		return () -> hostTask( idx, c::call, true );
 	};
 
+	//whether the game logic is parked right now (tests check where commands run)
+	public static boolean atSafePoint(){
+		return parked;
+	}
+
 	//actor thread, top of a scheduling pass: wait here while the render thread runs the tasks
 	private static void parkForTasks(){
 		if (tasks.isEmpty()) return;
@@ -631,8 +652,22 @@ public class CoopRemote {
 		if (b instanceof com.shatteredpixel.shatteredpixeldungeon.ui.StyledButton){
 			return ((com.shatteredpixel.shatteredpixeldungeon.ui.StyledButton) b).text();
 		}
+		if (b instanceof com.shatteredpixel.shatteredpixeldungeon.ui.TalentButton){
+			com.shatteredpixel.shatteredpixeldungeon.actors.hero.Talent t = talentOf( (com.shatteredpixel.shatteredpixeldungeon.ui.TalentButton) b );
+			return t == null ? "?" : Messages.titleCase( t.title() );
+		}
 		Item item = ((com.shatteredpixel.shatteredpixeldungeon.ui.ItemButton) b).item();
 		return item == null ? "?" : Messages.titleCase( item.title() );
+	}
+
+	private static com.shatteredpixel.shatteredpixeldungeon.actors.hero.Talent talentOf( com.shatteredpixel.shatteredpixeldungeon.ui.TalentButton b ){
+		try {
+			java.lang.reflect.Field f = com.shatteredpixel.shatteredpixeldungeon.ui.TalentButton.class.getDeclaredField( "talent" );
+			f.setAccessible( true );
+			return (com.shatteredpixel.shatteredpixeldungeon.actors.hero.Talent) f.get( b );
+		} catch (Exception e){
+			return null;
+		}
 	}
 
 	//texts and buttons of a window, in layout order
@@ -652,6 +687,10 @@ public class CoopRemote {
 			if (m instanceof com.shatteredpixel.shatteredpixeldungeon.ui.StyledButton){
 				com.shatteredpixel.shatteredpixeldungeon.ui.StyledButton b = (com.shatteredpixel.shatteredpixeldungeon.ui.StyledButton) m;
 				if (b.visible && b.text() != null && !b.text().isEmpty()) buttons.add( b );
+			} else if (m instanceof com.shatteredpixel.shatteredpixeldungeon.ui.TalentButton){
+				//talents to pick (metamorphosis)
+				com.shatteredpixel.shatteredpixeldungeon.ui.TalentButton b = (com.shatteredpixel.shatteredpixeldungeon.ui.TalentButton) m;
+				if (b.visible && b.active && talentOf( b ) != null) buttons.add( b );
 			} else if (m instanceof com.shatteredpixel.shatteredpixeldungeon.ui.ItemButton){
 				com.shatteredpixel.shatteredpixeldungeon.ui.ItemButton b = (com.shatteredpixel.shatteredpixeldungeon.ui.ItemButton) m;
 				if (b.visible && b.item() != null) buttons.add( b );
@@ -708,7 +747,21 @@ public class CoopRemote {
 			WindowButtons wb = (WindowButtons) handler;
 			if (index < 0) wb.window.onBackPressed();
 			else if (wb.buttons.isEmpty()) wb.window.hide();
-			else if (index < wb.buttons.size() && wb.buttons.get( index ).active) click( wb.buttons.get( index ) );
+			else if (index < wb.buttons.size()){
+				//the window is never shown here, so it never updates: some enable their buttons
+				//there (e.g. once the hero is ready)
+				wb.window.update();
+				if (wb.buttons.get( index ).active){
+					click( wb.buttons.get( index ) );
+				} else if (a.getInt( "tries" ) < 300){
+					//not yet (the hero is still finishing a step): try again at the next safe points
+					prompts.put( id, handler );
+					promptOwners.put( id, owner );
+					a.put( "tries", a.getInt( "tries" ) + 1 );
+					final int idx = Coop.indexOf( h );
+					hostTask( idx, () -> answerPrompt( Coop.get( idx ), a ) );
+				}
+			}
 		} else if (handler instanceof com.shatteredpixel.shatteredpixeldungeon.windows.WndOptions){
 			int index = a.getInt( "index" );
 			if (index < 0){
@@ -759,6 +812,7 @@ public class CoopRemote {
 		for (Char ch : Actor.chars()) sentIds.add( ch.id() );
 		mapHash = Arrays.hashCode( Dungeon.level.map );
 		heapHash = heapsBundle().toString().hashCode();
+		blobHash = blobsBundle( Dungeon.level ).toString().hashCode();
 		heroHash = new int[Coop.size()];
 		lastUpdate = System.currentTimeMillis();
 	}
@@ -824,6 +878,13 @@ public class CoopRemote {
 			waiting[i] = h.isAlive() && !Coop.isDead( h ) && CoopTime.isWaiting( h );
 		}
 		m.put( "waiting", waiting );
+		Bundle blobs = blobsBundle( level );
+		int bh = blobs.toString().hashCode();
+		if (bh != blobHash){
+			blobHash = bh;
+			m.put( "blobs", blobs );
+		}
+
 		//shared by the party
 		m.put( "gold", Dungeon.gold );
 		m.put( "energy", Dungeon.energy );
@@ -848,6 +909,34 @@ public class CoopRemote {
 		if (!ev.isEmpty()) m.put( "ev", ev.toArray( new String[0] ) );
 
 		CoopOnline.host.broadcast( m );
+	}
+
+	private static int blobHash = 0;
+
+	//gases and other floor effects: for each kind, the cells it is on and how strong it is there
+	private static Bundle blobsBundle( Level level ){
+		Bundle b = new Bundle();
+		ArrayList<String> kinds = new ArrayList<>();
+		for (com.shatteredpixel.shatteredpixeldungeon.actors.blobs.Blob blob : level.blobs.values()){
+			if (blob.volume <= 0 || blob.cur == null) continue;
+			int n = 0;
+			for (int v : blob.cur) if (v > 0) n++;
+			int[] cells = new int[n], vals = new int[n];
+			n = 0;
+			for (int i = 0; i < blob.cur.length; i++){
+				if (blob.cur[i] > 0){
+					cells[n] = i;
+					vals[n] = blob.cur[i];
+					n++;
+				}
+			}
+			String kind = blob.getClass().getName();
+			kinds.add( kind );
+			b.put( kind + ".c", cells );
+			b.put( kind + ".v", vals );
+		}
+		b.put( "kinds", kinds.toArray( new String[0] ) );
+		return b;
 	}
 
 	public static int checksum( int[] ids, int[] pos, int[] hp ){
@@ -946,7 +1035,10 @@ public class CoopRemote {
 			}
 			if (type.equals( "lost" )){
 				incoming.poll();
-				if (clientInGame && CoopOnline.client != null && CoopOnline.client.canRejoin()){
+				//the host ending the session (bye) or this player leaving isn't a dropped connection
+				String reason = m.getString( "reason" );
+				boolean closed = "host closed".equals( reason ) || "left".equals( reason );
+				if (!closed && clientInGame && CoopOnline.client != null && CoopOnline.client.canRejoin()){
 					startReconnecting();
 					continue;
 				}
@@ -1006,7 +1098,9 @@ public class CoopRemote {
 		return "scene=" + Game.scene().getClass().getSimpleName() + " inGame=" + clientInGame + " loading=" + loadingSnapshot
 				+ " awaitingSnap=" + awaitingSnapshot + " reconnecting=" + reconnecting + " seq=" + clientSeq
 				+ " queued=" + incoming.size() + (incoming.peek() == null ? "" : " next=" + NetConnection.type( incoming.peek() ) + "/" + incoming.peek().getInt( "seq" ))
-				+ " ready=" + (me != null && me.ready) + " connected=" + (CoopOnline.client != null && CoopOnline.client.isConnected());
+				+ " ready=" + (me != null && me.ready) + " connected=" + (CoopOnline.client != null && CoopOnline.client.isConnected())
+				+ " updates=" + updatesApplied + " waiting=" + lastWaiting + " prompt=" + lastPromptType + "/" + lastPromptId
+				+ " me=P" + (Coop.indexOf( me ) + 1) + " dungeonHero=P" + (Coop.indexOf( Dungeon.hero ) + 1);
 	}
 	private static WndMessage reconnectWindow = null;
 	//times this client got back in (tests read it)
@@ -1158,15 +1252,26 @@ public class CoopRemote {
 			if (!m.contains( "hero" + i )) continue;
 			Hero mirror = Coop.get( i );
 			Hero fresh = (Hero) m.getBundle( "hero" + i ).get( "h" );
-			if (fresh != null) copyHero( fresh, mirror );
+			if (fresh != null){
+				try {
+					copyHero( fresh, mirror );
+				} catch (RuntimeException ex){
+					//one bad hero bundle must not stop the rest of the update (waiting flags...)
+					lastReplayError = "hero " + i + ": " + ex;
+					ShatteredPixelDungeon.reportException( ex );
+				}
+			}
 		}
 
 		boolean[] waiting = m.getBooleanArray( "waiting" );
+		lastWaiting = Arrays.toString( waiting );
 		if (waiting != null){
 			for (int i = 0; i < Math.min( waiting.length, Coop.size() ); i++){
 				Coop.get( i ).ready = waiting[i];
 			}
 		}
+
+		if (m.contains( "blobs" )) applyBlobs( level, m.getBundle( "blobs" ) );
 
 		if (m.contains( "gold" )){
 			Dungeon.gold = m.getInt( "gold" );
@@ -1201,6 +1306,86 @@ public class CoopRemote {
 			}
 			lastMismatch = sb.toString();
 		}
+	}
+
+	//the mirror's gases take the host's cells; they never act here, they're only drawn
+	private static void applyBlobs( Level level, Bundle b ){
+		HashSet<String> present = new HashSet<>( Arrays.asList( b.getStringArray( "kinds" ) ) );
+		for (com.shatteredpixel.shatteredpixeldungeon.actors.blobs.Blob blob : level.blobs.values()){
+			if (!present.contains( blob.getClass().getName() ) && blob.volume > 0 && blob.cur != null){
+				Arrays.fill( blob.cur, 0 );
+				blob.volume = 0;
+				blob.area.setEmpty();
+			}
+		}
+		for (String kind : present){
+			Class<?> cls = Reflection.forName( kind );
+			if (cls == null || !com.shatteredpixel.shatteredpixeldungeon.actors.blobs.Blob.class.isAssignableFrom( cls )) continue;
+			@SuppressWarnings("unchecked")
+			Class<? extends com.shatteredpixel.shatteredpixeldungeon.actors.blobs.Blob> bc = (Class<? extends com.shatteredpixel.shatteredpixeldungeon.actors.blobs.Blob>) cls;
+			com.shatteredpixel.shatteredpixeldungeon.actors.blobs.Blob blob = level.blobs.get( bc );
+			if (blob == null){
+				blob = Reflection.newInstance( bc );
+				if (blob == null) continue;
+				level.blobs.put( bc, blob );
+				GameScene.add( blob );
+			}
+			if (blob.cur == null || blob.cur.length != level.length()) blob.cur = new int[level.length()];
+			Arrays.fill( blob.cur, 0 );
+			int[] cells = b.getIntArray( kind + ".c" ), vals = b.getIntArray( kind + ".v" );
+			int volume = 0;
+			blob.area.setEmpty();
+			for (int i = 0; i < cells.length && i < vals.length; i++){
+				if (cells[i] < 0 || cells[i] >= blob.cur.length) continue;
+				blob.cur[cells[i]] = vals[i];
+				volume += vals[i];
+				blob.area.union( cells[i] % level.width(), cells[i] / level.width() );
+			}
+			blob.volume = volume;
+		}
+		blobsApplied++;
+	}
+
+	//updates that carried gases (tests read it)
+	public static volatile int blobsApplied = 0;
+	//missiles and bolts drawn from the host's events (tests read it)
+	public static volatile int missilesReplayed = 0;
+	public static volatile String lastReplayError = "";
+	public static volatile String lastWaiting = "";
+
+	//MissileSprite / MagicMissile: thrown things and magic bolts, drawn on clients without callbacks
+	public static void missileEvent( Object item, float fx, float fy, float tx, float ty ){
+		if (!onlineHost()) return;
+		events.add( "ms|" + (item == null ? "" : item.getClass().getName()) + "|" + Math.round( fx ) + "|" + Math.round( fy ) + "|" + Math.round( tx ) + "|" + Math.round( ty ) );
+	}
+
+	public static volatile int missilesSent = 0;
+
+	public static void boltEvent( int type, float fx, float fy, float tx, float ty ){
+		if (!onlineHost()) return;
+		missilesSent++;
+		events.add( "mm|" + type + "|" + Math.round( fx ) + "|" + Math.round( fy ) + "|" + Math.round( tx ) + "|" + Math.round( ty ) );
+	}
+
+	private static void replayMissile( String[] p ){
+		Hero me = localHero();
+		if (me == null || me.sprite == null || me.sprite.parent == null){
+			lastReplayError = "no sprite to draw " + p[0] + " with";
+			return;
+		}
+		com.watabou.utils.PointF from = new com.watabou.utils.PointF( Integer.parseInt( p[2] ), Integer.parseInt( p[3] ) );
+		com.watabou.utils.PointF to = new com.watabou.utils.PointF( Integer.parseInt( p[4] ), Integer.parseInt( p[5] ) );
+		if (p[0].equals( "ms" )){
+			Item item = null;
+			Class<?> cls = p[1].isEmpty() ? null : Reflection.forName( p[1] );
+			if (cls != null && Item.class.isAssignableFrom( cls )) item = (Item) Reflection.newInstance( cls );
+			((com.shatteredpixel.shatteredpixeldungeon.sprites.MissileSprite) me.sprite.parent.recycle(
+					com.shatteredpixel.shatteredpixeldungeon.sprites.MissileSprite.class )).reset( from, to, item, null );
+		} else {
+			((com.shatteredpixel.shatteredpixeldungeon.effects.MagicMissile) me.sprite.parent.recycle(
+					com.shatteredpixel.shatteredpixeldungeon.effects.MagicMissile.class )).reset( Integer.parseInt( p[1] ), from, to, null );
+		}
+		missilesReplayed++;
 	}
 
 	private static void askResync(){
@@ -1271,6 +1456,10 @@ public class CoopRemote {
 				GLog.i( e.substring( 4 ) );
 				return;
 			}
+			if (p[0].equals( "ms" ) || p[0].equals( "mm" )){
+				replayMissile( e.split( "\\|", -1 ) );
+				return;
+			}
 			Actor a = Actor.findById( Integer.parseInt( p[1] ) );
 			if (!(a instanceof Char) || ((Char) a).sprite == null) return;
 			Char ch = (Char) a;
@@ -1280,8 +1469,9 @@ public class CoopRemote {
 					break;
 				case "st":  ch.sprite.showStatus( Integer.parseInt( p[2] ), p.length > 3 ? p[3] : "" ); break;
 			}
-		} catch (RuntimeException ignored){
+		} catch (RuntimeException ex){
 			//a malformed or stale event only loses an animation
+			lastReplayError = e + ": " + ex;
 		}
 	}
 
