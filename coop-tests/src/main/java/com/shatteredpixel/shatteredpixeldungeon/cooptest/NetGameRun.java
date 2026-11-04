@@ -30,12 +30,14 @@ import java.util.List;
 
 /**
  * Runs NetGameSim as two child processes (host and client) and reports both.
- * Args: [target depth]
+ * Args: [target depth] [number of clients] [deaths]
  */
 public class NetGameRun {
 
 	public static void main( String[] args ) throws Exception {
 		String depth = args.length > 0 ? args[0] : "4";
+		int clients = args.length > 1 ? Integer.parseInt( args[1] ) : 1;
+		String mode = args.length > 2 ? args[2] : "items";
 		int port;
 		try (ServerSocket s = new ServerSocket( 0 )){
 			port = s.getLocalPort();
@@ -44,17 +46,30 @@ public class NetGameRun {
 		String cp = System.getProperty( "java.class.path" );
 		String main = NetGameSim.class.getName();
 
-		Process host = new ProcessBuilder( java, "-cp", cp, main, "host", Integer.toString( port ), depth ).redirectErrorStream( true ).start();
-		Process client = new ProcessBuilder( java, "-cp", cp, main, "client", Integer.toString( port ) ).redirectErrorStream( true ).start();
-
+		Process host = new ProcessBuilder( java, "-cp", cp, main, "host", Integer.toString( port ), depth, Integer.toString( clients ), mode ).redirectErrorStream( true ).start();
 		List<String> hostOut = collect( host );
-		List<String> clientOut = collect( client );
-		int h = host.waitFor(), c = client.waitFor();
+		List<Process> clientProcs = new ArrayList<>();
+		List<List<String>> clientOuts = new ArrayList<>();
+		for (int i = 1; i <= clients; i++){
+			Process c = new ProcessBuilder( java, "-cp", cp, main, "client", Integer.toString( port ), Integer.toString( i ), mode ).redirectErrorStream( true ).start();
+			clientProcs.add( c );
+			clientOuts.add( collect( c ) );
+		}
+
+		int h = host.waitFor();
+		StringBuilder exits = new StringBuilder();
+		boolean ok = h == 0;
+		for (Process c : clientProcs){
+			int e = c.waitFor();
+			ok = ok && e == 0;
+			exits.append( ", client exit " ).append( e );
+		}
 		for (String l : hostOut) System.out.println( l );
-		System.out.println( "----" );
-		for (String l : clientOut) System.out.println( l );
-		boolean ok = h == 0 && c == 0;
-		System.out.println( ok ? "[NETGAME] PASSED" : "[NETGAME] FAILED (host exit " + h + ", client exit " + c + ")" );
+		for (int i = 0; i < clientOuts.size(); i++){
+			System.out.println( "---- client " + (i + 1) );
+			for (String l : clientOuts.get( i )) System.out.println( l );
+		}
+		System.out.println( ok ? "[NETGAME] PASSED" : "[NETGAME] FAILED (host exit " + h + exits + ")" );
 		System.exit( ok ? 0 : 1 );
 	}
 
@@ -64,7 +79,7 @@ public class NetGameRun {
 			try (BufferedReader r = new BufferedReader( new InputStreamReader( p.getInputStream() ) )){
 				String l;
 				while ((l = r.readLine()) != null){
-					if (l.startsWith( "[HOST]" ) || l.startsWith( "[CLIENT]" ) || l.startsWith( "[SIM]" )){
+					if (l.startsWith( "[HOST]" ) || l.startsWith( "[CLIENT" ) || l.startsWith( "[SIM]" )){
 						synchronized (lines){ lines.add( l.length() > 400 ? l.substring( 0, 400 ) : l ); }
 					}
 				}

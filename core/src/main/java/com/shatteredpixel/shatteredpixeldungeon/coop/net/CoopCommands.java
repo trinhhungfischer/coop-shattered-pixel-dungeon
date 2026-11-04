@@ -73,7 +73,7 @@ public class CoopCommands {
 		if (CoopRemote.onlineClient()){
 			Bundle m = NetConnection.message( TALENT );
 			m.put( "name", talent.name() );
-			CoopOnline.client.send( m );
+			CoopRemote.sendCommand( m );
 			//the mirror shows the point at once (without its effects); the host's hero confirms it
 			for (LinkedHashMap<Talent, Integer> tier : hero.talents){
 				if (tier.containsKey( talent )) tier.put( talent, tier.get( talent ) + 1 );
@@ -166,7 +166,7 @@ public class CoopCommands {
 		m.put( "lvl", lvl );
 		m.put( "qty", qty );
 		m.put( "slot", slot );
-		CoopOnline.client.send( m );
+		CoopRemote.sendCommand( m );
 	}
 
 	//host: what happened to the last alchemy command (tests and debugging)
@@ -250,7 +250,7 @@ public class CoopCommands {
 			m.put( "path", path );
 			m.put( "cls", item.getClass().getName() );
 			m.put( "all", all );
-			CoopOnline.client.send( m );
+			CoopRemote.sendCommand( m );
 			return !inAlchemy;
 		}
 		//the host's own alchemy screen: the game is paused there, nothing else runs
@@ -262,6 +262,8 @@ public class CoopCommands {
 	}
 
 	static void onEnergize( Hero h, Bundle m ){
+		//a client energizes from its alchemy screen only (elsewhere it is a window the host forwards)
+		if (!alchemyOpen.containsKey( h )) return;
 		Item it = CoopItems.at( h, m.getString( "path" ) );
 		if (it == null || !it.getClass().getName().equals( m.getString( "cls" ) ) || it.energyVal() <= 0) return;
 		if (m.getBoolean( "all" )) WndEnergizeItem.energizeAll( it ); else WndEnergizeItem.energizeOne( it );

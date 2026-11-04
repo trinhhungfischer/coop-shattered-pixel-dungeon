@@ -111,6 +111,28 @@ Phần này làm và kiểm thử **trong hotseat trước** (bot headless), r�
 - **Click của người chơi host:** `ui.Button` gọi `CoopRemote.uiClick`. Khi online và đang ở `GameScene`, click chạy như một task lúc logic game dừng ở điểm an toàn, giống thao tác chạm bản đồ. Host đang là khán giả (hero đã chết) thì click chạy ngay.
 - **Metamorphosis:** nút talent cũng được chuyển (nhãn là tên talent). Cả bốn bước (chọn talent, xác nhận, chọn talent thay thế, xác nhận) đều hiện trên máy người chơi.
 
+**Rà soát và kiểm thử thêm (lỗi đã sửa):**
+- **Chỉ còn một hero sống:** online vẫn dùng nhóm lượt (`CoopTime.enabled()`). Trước đây vòng lặp lượt bị giữ trong lượt của hero đó, nên mọi lệnh và mọi cập nhật đều dừng hẳn.
+- **Ankh của hero ở xa:**
+  - Cửa sổ hồi sinh tới đúng người chơi; lúc game đang chờ lựa chọn này, task vẫn chạy được.
+  - `Dungeon.hero` được giữ ở hero đang hồi sinh cho tới khi `InterlevelScene` chạy xong.
+  - Cửa sổ vẫn mở sau một lựa chọn (như WndResurrect) thì được gửi lại cho người chơi.
+- **Kiểm tra lệnh:**
+  - Dùng item chỉ được khi tới lượt.
+  - Câu trả lời phải là lựa chọn có trong cửa sổ và đang bật.
+  - Ô được chọn phải nằm trong bản đồ.
+  - Năng lượng hoá chỉ được khi đang mở alchemy.
+- **Lệnh của tầng cũ:** mỗi lệnh của client mang `seq` của snapshot nó được tạo ra. Host bỏ lệnh thuộc tầng cũ và xoá các câu hỏi cũ khi đổi tầng.
+- **Thử lại nút chưa bật:** mỗi lần thử ở một điểm an toàn khác nhau (trước đây cả 300 lần đều chạy trong cùng một frame).
+- **Nối lại:**
+  - Host nhận kết nối mới của đúng slot và token, kể cả khi chưa nhận ra kết nối cũ đã chết.
+  - Client bị từ chối trong lúc nối lại thì thử tiếp cho tới hết hạn.
+  - Host thoát game thì client không cố nối lại.
+- **Mạng:** mỗi kết nối có luồng ghi và hàng đợi riêng. Một client bị nghẽn không làm treo host; quá 32 MB chưa gửi được thì đóng kết nối đó.
+- **Kiểm thử mới:**
+  - `netGameSim -PnetClients=2`: 3 người chơi.
+  - `netGameSim -PnetMode=deaths`: chết khi có Ankh, hồi sinh, chết hẳn, rồi host chơi một mình.
+
 **Hạn chế còn lại:**
 - Kết quả alchemy ngẫu nhiên có thể hiện khác trên màn hình client cho tới khi túi đồ thật từ host về.
 - Khi người chơi host dùng alchemy, game dừng với mọi người.

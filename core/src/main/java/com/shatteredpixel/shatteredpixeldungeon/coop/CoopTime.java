@@ -74,9 +74,12 @@ public class CoopTime implements Coop.Listener {
 	//actor -> hero whose group it follows (absent: not decided yet, null value: level-wide actor)
 	private static final IdentityHashMap<Actor, Hero> owners = new IdentityHashMap<>();
 
-	//more than one living hero: groups matter. With one hero left the game is plain solo.
+	//more than one living hero: groups matter. With one hero left a hotseat game is plain solo.
+	//Online it isn't: commands only run while the actor loop is parked at a safe point, so the last
+	//hero's turn group must pause for its player like any other (solo would hold the loop inside
+	//that hero's turn, and nothing would ever run).
 	public static boolean enabled(){
-		return Coop.active() && Coop.aliveHeroes().size() > 1;
+		return Coop.active() && Coop.aliveHeroes().size() > (online ? 0 : 1);
 	}
 
 	public static Hero focus(){

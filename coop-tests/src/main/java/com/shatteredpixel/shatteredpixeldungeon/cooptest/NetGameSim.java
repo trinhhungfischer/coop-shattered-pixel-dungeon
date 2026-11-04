@@ -57,6 +57,15 @@ import java.util.List;
 public class NetGameSim {
 
 	static boolean isHost;
+	static int clients = 1, clientIndex = 1;
+	static final HeroClass[] CLIENT_CLASSES = { HeroClass.MAGE, HeroClass.ROGUE, HeroClass.HUNTRESS };
+
+	//only the first client plays the item/shop/alchemy scenario, the others just play along
+	static boolean scenarioClient(){
+		return clientIndex == 1 && !deaths;
+	}
+
+	static boolean deaths = false;
 	static int port;
 	static int targetDepth = 3;
 	static int frames = 0;
@@ -68,13 +77,19 @@ public class NetGameSim {
 	public static void main( String[] args ) throws Exception {
 		isHost = args[0].equals( "host" );
 		port = Integer.parseInt( args[1] );
-		if (args.length > 2) targetDepth = Integer.parseInt( args[2] );
+		//host: target depth and the number of clients to wait for; client: its number (1 plays the scenario)
+		if (isHost && args.length > 2) targetDepth = Integer.parseInt( args[2] );
+		if (isHost && args.length > 3) clients = Integer.parseInt( args[3] );
+		//deaths mode: no item scenario; the first client's hero dies with an ankh, comes back, dies
+		//for good, and the host plays on alone
+		deaths = args.length > (isHost ? 4 : 3) && args[isHost ? 4 : 3].equals( "deaths" );
+		if (!isHost && args.length > 2) clientIndex = Integer.parseInt( args[2] );
 		CoopSim.customDriver = NetGameSim::frame;
 		CoopSim.launch();
 	}
 
 	static void log( String s ){
-		System.out.println( (isHost ? "[HOST] " : "[CLIENT] ") + s );
+		System.out.println( (isHost ? "[HOST] " : clientIndex == 1 ? "[CLIENT] " : "[CLIENT" + clientIndex + "] ") + s );
 	}
 
 	static void frame(){
@@ -110,7 +125,7 @@ public class NetGameSim {
 				phase = 1;
 				return;
 			case 1:
-				if (!CoopOnline.host.allReady()) return;
+				if (CoopOnline.host.playerCount() < clients + 1 || !CoopOnline.host.allReady()) return;
 				CoopOnline.host.startGame();
 				CoopOnline.players = CoopOnline.host.players();
 				GamesInProgress.curSlot = 1;
@@ -130,14 +145,21 @@ public class NetGameSim {
 				}
 				if (Dungeon.depth >= targetDepth){
 					log( "reached depth " + Dungeon.depth + " after " + actions + " actions, closing the session; host clicks " + safeClicks + " (" + unsafeClicks + " outside a safe point), bolts sent " + CoopRemote.missilesSent );
-					if (safeClicks == 0) CoopSim.problem( "the host's clicks never ran" );
+					if (!deaths && safeClicks == 0) CoopSim.problem( "the host's clicks never ran" );
+					if (deaths && deathStage < 4) CoopSim.problem( "the deaths scenario stopped at stage " + deathStage );
+					if (deaths && scenarioHero() != null && !Coop.isDead( scenarioHero() )) CoopSim.problem( "the client's hero isn't dead at the end" );
 					if (unsafeClicks > 0) CoopSim.problem( unsafeClicks + " host clicks ran while the game logic was running" );
 					CoopOnline.leave();
 					CoopSim.finish();
 					return;
 				}
 				cheats();
-				if (Coop.size() > 1 && !Actor.processing()) hostScenario( Coop.get(1) );
+				if (Coop.size() > 1 && !Actor.processing()){
+					Hero target = scenarioHero();
+					if (target != null){
+						if (deaths) deathScenario( target ); else hostScenario( target );
+					}
+				}
 				Hero me = CoopRemote.localHero();
 				if (frames % 2000 == 0){
 					StringBuilder sb = new StringBuilder("state:");
@@ -147,7 +169,7 @@ public class NetGameSim {
 							.append(" t=").append(Actor.coopTime(h));
 					sb.append(" processing=").append(Actor.processing()).append(" inputReady=").append(CoopRemote.inputReady())
 							.append(" dungeonHero=P").append(Coop.indexOf(Dungeon.hero)+1).append(" actions=").append(actions)
-							.append(" lastUse=").append(CoopRemote.lastUseResult);
+							.append(" lastUse=").append(CoopRemote.lastUseResult).append(" dropped stale/notWaiting=").append(CoopRemote.droppedStale).append("/").append(CoopRemote.droppedNotWaiting);
 					log( sb.toString() );
 				}
 				if (!CoopRemote.inputReady()) return;
@@ -180,7 +202,8 @@ public class NetGameSim {
 			Dungeon.gold = 1000;
 			log( "gave the client's hero a scroll of upgrade, 3 seeds, level 3 and the party 1000 gold" );
 		}
-		if (!gasPlaced && Dungeon.depth == 1 && frames > depthFrame + 300){
+		//with the shop, where the party stays a while (the mirror is surely loaded by then)
+		if (!gasPlaced && shopPlaced){
 			gasPlaced = true;
 			int cell = h.pos + Dungeon.level.width();
 			if (cell >= Dungeon.level.length() || Dungeon.level.solid[cell]) cell = h.pos;
@@ -232,8 +255,62 @@ public class NetGameSim {
 
 	//test cheats on the real game: heroes can't die and everyone knows the map
 
+	//the hero of the first client (players join in any order, so not simply party index 1)
+	static Hero scenarioHero(){
+		for (int i = 1; i < Coop.size() && i < CoopRemote.slotsByPartyIndex.length; i++){
+			for (CoopNet.Player p : CoopOnline.players){
+				if (p.slot == CoopRemote.slotsByPartyIndex[i] && p.name.equals( "Client1" )) return Coop.get( i );
+			}
+		}
+		return null;
+	}
+
 	static void cheats(){
-		for (Hero h : Coop.aliveHeroes()) Buff.prolong( h, Invulnerability.class, 5f );
+		for (Hero h : Coop.aliveHeroes()) if (h != doomed) Buff.prolong( h, Invulnerability.class, 5f );
+	}
+
+	// deaths mode (host): 1 the hero dies holding an ankh, 2 its player chose to come back,
+	// 3 it died for good and the host plays alone
+	static Hero doomed = null;
+
+	//deaths happen during the game's turns (the actor thread), like a mob's hit
+	static void kill( Hero h ){
+		Actor.addDelayed( new Actor(){
+			{ actPriority = VFX_PRIO; }
+			@Override
+			protected boolean act(){
+				Actor.remove( this );
+				h.damage( h.HP + 100, new com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Rat() );
+				return true;
+			}
+		}, 0 );
+	}
+	static int deathStage = 0, deathFrame = 0;
+
+	static void deathScenario( Hero h ){
+		if (deathStage == 0 && Dungeon.depth == 2 && frames > depthFrame + 400 && com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.isWaiting( h )){
+			deathStage = 1;
+			doomed = h;
+			h.belongings.backpack.items.add( new com.shatteredpixel.shatteredpixeldungeon.items.Ankh() );
+			Buff.detach( h, Invulnerability.class );
+			log( "killing the client's hero (it holds an ankh)" );
+			kill( h );
+		} else if (deathStage == 3 && Coop.isDead( h )){
+			deathStage = 4;
+			log( "the client's hero is dead for good, " + Coop.aliveHeroes().size() + " hero(es) alive" );
+		} else if (deathStage == 1 && h.isAlive() && com.shatteredpixel.shatteredpixeldungeon.windows.WndResurrect.instance == null
+				&& Game.scene() instanceof GameScene){
+			deathStage = 2;
+			deathFrame = frames;
+			log( "the client's hero came back (HP " + h.HP + "/" + h.HT + ")" );
+		} else if (deathStage == 2 && frames > deathFrame + 400 && com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.isWaiting( h )){
+			deathStage = 3;
+			Buff.detach( h, Invulnerability.class );
+			log( "killing the client's hero for good" );
+			kill( h );
+
+			lastProgress = System.currentTimeMillis();
+		}
 	}
 
 	// ---------------------------------------------------------------------------------
@@ -255,7 +332,7 @@ public class NetGameSim {
 				});
 				for (int i = 0; i < 100; i++){
 					try {
-						client.connect( "127.0.0.1", port, "Client", 1000 );
+						client.connect( "127.0.0.1", port, "Client" + clientIndex, 1000 );
 						break;
 					} catch (Exception e){
 						Thread.sleep( 200 );
@@ -264,7 +341,7 @@ public class NetGameSim {
 				CoopOnline.leave();
 				CoopOnline.role = CoopOnline.Role.CLIENT;
 				CoopOnline.client = client;
-				client.pick( "MAGE" );
+				client.pick( CLIENT_CLASSES[(clientIndex - 1) % CLIENT_CLASSES.length].name() );
 				client.setReady( true );
 				phase = 1;
 				return;
@@ -284,6 +361,10 @@ public class NetGameSim {
 					if (CoopRemote.updatesApplied < 30) CoopSim.problem( "client applied only " + CoopRemote.updatesApplied + " updates" );
 					if (CoopRemote.checksumMismatches > 0) CoopSim.problem( "mirror differed from the host after " + CoopRemote.checksumMismatches + " updates; last: " + CoopRemote.lastMismatch );
 					if (lastDepth < 2) CoopSim.problem( "client never followed the party down (depth " + lastDepth + ")" );
+					if (!scenarioClient()){
+						CoopSim.finish();
+						return;
+					}
 					com.shatteredpixel.shatteredpixeldungeon.items.weapon.melee.MagesStaff st = staff();
 					int after = st == null ? -1 : st.level();
 					log( "items: " + zaps + " zaps, " + cellAnswers + " cell prompts answered, " + itemAnswers
@@ -318,14 +399,15 @@ public class NetGameSim {
 					lastDepth = Dungeon.depth;
 					lastProgress = System.currentTimeMillis();
 					log( "mirror on depth " + Dungeon.depth + " as " + Dungeon.hero.heroClass + " (party index " + CoopRemote.localPartyIndex() + ")" );
-					if (Dungeon.hero.heroClass != HeroClass.MAGE) CoopSim.problem( "client controls a " + Dungeon.hero.heroClass + ", expected its Mage" );
+					HeroClass expected = CLIENT_CLASSES[(clientIndex - 1) % CLIENT_CLASSES.length];
+					if (Dungeon.hero.heroClass != expected) CoopSim.problem( "client controls a " + Dungeon.hero.heroClass + ", expected its " + expected );
 				}
 				if (frames % 1500 == 0) log( "frame " + frames + " actions " + actions + " shop " + shopStage + " | " + CoopRemote.clientDebug() );
 				if (answerPrompts()) return;
 				if (!CoopRemote.inputReady()) return;
 				if (frames % 3 != 0) return;
-				if (scenario()) return;
-				if (useItems()) return;
+				if (scenarioClient() && scenario()) return;
+				if (scenarioClient() && useItems()) return;
 				int cell = chooseCell( Dungeon.hero );
 				if (cell != -1){
 					CoopRemote.onCellSelected( cell );
@@ -445,6 +527,10 @@ public class NetGameSim {
 			} else if (shopStage == 2){
 				shopStage = 3;
 				note = " (shopkeeper's words)";
+			} else if (CoopRemote.lastPromptTitle.contains( "Resurrection" )){
+				//keep the items already chosen and come back
+				pick = CoopRemote.lastPromptOptions.length - 1;
+				note = " (resurrect)";
 			} else if (shopStage == 4){
 				shopStage = 5;
 				shopDoneFrame = frames;

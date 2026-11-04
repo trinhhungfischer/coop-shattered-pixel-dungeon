@@ -35,8 +35,10 @@ import java.net.Socket;
  * JSON + gzip), framed as a 4-byte length followed by the bytes. Every message has a type
  * under the key "t".
  *
- * A reader thread delivers incoming messages to the listener; send() can be called from any
- * thread. No game state is touched here: listeners queue messages for the game threads.
+ * A reader thread delivers incoming messages to the listener. send() can be called from any
+ * thread and never blocks: a writer thread sends queued messages, so one stalled player can't
+ * hold up the game or the heartbeats. No game state is touched here: listeners queue messages for
+ * the game threads.
  */
 public class NetConnection {
 
@@ -63,13 +65,47 @@ public class NetConnection {
 		this.listener = listener;
 		socket.setTcpNoDelay( true );
 		in = new DataInputStream( socket.getInputStream() );
-		out = new DataOutputStream( socket.getOutputStream() );
+		out = new DataOutputStream( new java.io.BufferedOutputStream( socket.getOutputStream(), 64 * 1024 ) );
 	}
+
+	//bytes waiting to be sent; a connection that falls this far behind is closed
+	private static final long MAX_QUEUED = 32L * 1024 * 1024;
+	private static final byte[] CLOSE = new byte[0];
+	private final java.util.concurrent.LinkedBlockingQueue<byte[]> outbox = new java.util.concurrent.LinkedBlockingQueue<>();
+	private final java.util.concurrent.atomic.AtomicLong queued = new java.util.concurrent.atomic.AtomicLong();
 
 	public void start( String threadName ){
 		Thread reader = new Thread( this::readLoop, threadName );
 		reader.setDaemon( true );
 		reader.start();
+		Thread writer = new Thread( this::writeLoop, threadName + "-writer" );
+		writer.setDaemon( true );
+		writer.start();
+	}
+
+	private void writeLoop(){
+		try {
+			while (true){
+				byte[] data = outbox.take();
+				if (data == CLOSE) break;
+				queued.addAndGet( -data.length );
+				out.writeInt( data.length );
+				out.write( data );
+				if (outbox.isEmpty()) out.flush();
+			}
+			out.flush();
+		} catch (IOException | InterruptedException e){
+			//closed below
+		}
+		closeSocket();
+		if (open) close( "send failed" );
+	}
+
+	private void closeSocket(){
+		try {
+			socket.close();
+		} catch (IOException ignored){
+		}
 	}
 
 	private void readLoop(){
@@ -83,6 +119,8 @@ public class NetConnection {
 				byte[] data = new byte[length];
 				in.readFully( data );
 				lastReceived = System.currentTimeMillis();
+				//closed meanwhile (the socket itself closes a little later): nothing more is delivered
+				if (!open) return;
 				Bundle message = decode( data );
 				if (message == null){
 					close( "unreadable message" );
@@ -98,17 +136,12 @@ public class NetConnection {
 	public boolean send( Bundle message ){
 		if (!open) return false;
 		byte[] data = encode( message );
-		try {
-			synchronized (out){
-				out.writeInt( data.length );
-				out.write( data );
-				out.flush();
-			}
-			return true;
-		} catch (IOException e){
-			close( "send failed" );
+		if (queued.addAndGet( data.length ) > MAX_QUEUED){
+			close( "too far behind" );
 			return false;
 		}
+		outbox.add( data );
+		return true;
 	}
 
 	public boolean isOpen(){
@@ -128,10 +161,17 @@ public class NetConnection {
 			if (!open) return;
 			open = false;
 		}
-		try {
-			socket.close();
-		} catch (IOException ignored){
-		}
+		//what was queued before (a goodbye) still goes out; a stalled peer gets cut off soon
+		outbox.add( CLOSE );
+		Thread cut = new Thread( () -> {
+			try {
+				Thread.sleep( 2000 );
+			} catch (InterruptedException ignored){
+			}
+			closeSocket();
+		}, "coop-close" );
+		cut.setDaemon( true );
+		cut.start();
 		listener.onClosed( this, reason );
 	}
 

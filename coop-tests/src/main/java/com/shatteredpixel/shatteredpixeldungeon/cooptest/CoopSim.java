@@ -158,7 +158,7 @@ public class CoopSim {
 				@Override public void log(String tag, String message, Throwable exception) { log(tag, message + " " + stack(exception)); }
 				@Override public void error(String tag, String message) {
 					errorsLogged++;
-					problem("logged error [" + tag + "] " + message);
+					problem("logged error [" + tag + "] " + message.replace("\r", "").replace("\n", " | "));
 				}
 				@Override public void error(String tag, String message, Throwable exception) { error(tag, message + " " + stack(exception)); }
 				@Override public void debug(String tag, String message) {}
@@ -966,6 +966,34 @@ public class CoopSim {
 				sb.append(" locked=").append(Dungeon.level.locked);
 				if (ex != null){
 					sb.append(" exit=").append(ex.cell());
+					//the stairs' neighbourhood: '#' not standable, '.' free, 'H' hero, 'M' other char
+					int w = Dungeon.level.width();
+					sb.append(" range=").append(com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore.transitionRange(Dungeon.level, ex)).append(" around=[");
+					for (int dy = -2; dy <= 2; dy++){
+						for (int dx = -2; dx <= 2; dx++){
+							int c = ex.cell() + dx + dy * w;
+							if (c < 0 || c >= Dungeon.level.length()) { sb.append(' '); continue; }
+							com.shatteredpixel.shatteredpixeldungeon.actors.Char ch = com.shatteredpixel.shatteredpixeldungeon.actors.Actor.findChar(c);
+							sb.append(ch instanceof Hero ? 'H' : ch != null ? 'M' : (Dungeon.level.passable[c] && !Dungeon.level.solid[c]) ? '.' : '#');
+						}
+						sb.append(dy < 2 ? "/" : "]");
+					}
+					sb.append(" exitTerrain=").append(Dungeon.level.map[ex.cell()]);
+					for (com.shatteredpixel.shatteredpixeldungeon.items.Heap heap : Dungeon.level.heaps.valueList()){
+						boolean key = false;
+						for (com.shatteredpixel.shatteredpixeldungeon.items.Item i : heap.items) if (i instanceof com.shatteredpixel.shatteredpixeldungeon.items.keys.Key) key = true;
+						if (!key) continue;
+						sb.append(" keyHeap@").append(heap.pos).append(heap.type).append("[");
+						for (com.shatteredpixel.shatteredpixeldungeon.items.Item i : heap.items){
+							Integer m = heap.coopLoot == null ? null : heap.coopLoot.looted.get(i);
+							sb.append(i.getClass().getSimpleName()).append(m == null ? "" : "~" + m).append(",");
+						}
+						sb.append("]");
+					}
+					for (int dy = -2; dy <= 2; dy++) for (int dx = -2; dx <= 2; dx++){
+						com.shatteredpixel.shatteredpixeldungeon.actors.Char ch = com.shatteredpixel.shatteredpixeldungeon.actors.Actor.findChar(ex.cell() + dx + dy * w);
+						if (ch != null && !(ch instanceof Hero)) sb.append(" M=").append(ch.getClass().getSimpleName()).append("@").append(ch.pos);
+					}
 					for (Hero h : Coop.aliveHeroes()) sb.append(" distP").append(Coop.indexOf(h)+1).append("=").append(Dungeon.level.distance(h.pos, ex.cell()));
 				}
 			}

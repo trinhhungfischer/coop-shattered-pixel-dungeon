@@ -221,15 +221,20 @@ public class CoopHost implements NetConnection.Listener {
 		int slot = -1;
 		boolean rejoin = false;
 		String rejoinName = null;
+		NetConnection replaced = null;
 		synchronized (this){
 			if (m.getInt( "protocol" ) != CoopNet.PROTOCOL || m.getInt( "game" ) != gameVersion){
 				reason = "version";
 			} else if (started && m.contains( "token" )){
 				int s = m.getInt( "slot" );
-				if (s > 0 && s < clients.length && dropped[s] && clients[s] == null && tokens[s] == m.getLong( "token" )){
+				//the slot's own player coming back. The old connection may still look alive here
+				//(the client noticed the drop first): the new one replaces it.
+				if (s > 0 && s < clients.length && (dropped[s] || clients[s] != null) && player( s ) != null
+						&& tokens[s] == m.getLong( "token" )){
 					slot = s;
 					rejoin = true;
 					dropped[s] = false;
+					replaced = clients[s];
 					clients[s] = c;
 					c.slot = s;
 					CoopNet.Player p = player( s );
@@ -273,6 +278,7 @@ public class CoopHost implements NetConnection.Listener {
 		}
 		welcome.put( "rejoin", rejoin );
 		c.send( welcome );
+		if (replaced != null && replaced != c) replaced.close( "replaced" );
 		if (rejoin){
 			events.onPlayerRejoined( slot, rejoinName );
 		} else {
