@@ -41,7 +41,8 @@ tasks.register('lobbySim', JavaExec) {
 }
 
 //online coop end to end: a host and a client game process on the loopback address
-//./gradlew coop-tests:netGameSim [-PnetDepth=4] [-PnetClients=1] [-PnetMode=items|deaths]
+//./gradlew coop-tests:netGameSim [-PnetDepth=4] [-PnetClients=1] [-PnetMode=items|deaths|actions]
+//(actions: one client goes through small actions one by one, see NetActionCases)
 tasks.register('netGameSim', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.shatteredpixel.shatteredpixeldungeon.cooptest.NetGameRun'

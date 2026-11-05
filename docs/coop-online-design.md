@@ -137,8 +137,12 @@ Phần này làm và kiểm thử **trong hotseat trước** (bot headless), r�
   - Các task xếp sau câu trả lời vẫn chạy trong cùng frame, ví dụ một lần bấm của host. Giờ khi đang chuyển scene thì không chạy thêm task nào; chúng sẽ chạy ở scene sau.
   - Luồng actor được thả ra khỏi điểm park rồi cho một actor chạy lượt (`Hero.act` đặt con trỏ về hero đang hành động). Giờ luồng actor chờ tới khi scene đổi xong.
   - Trong lúc chờ lựa chọn hồi sinh, con trỏ bị trả về hero của host. `GameScene` thấy hero đó còn sống nên đánh thức luồng actor. Giờ con trỏ ở lại hero đang chờ hồi sinh, game dừng giống bản solo.
+- **Dừng hero đang đi hoặc đang nghỉ:** ở bản solo, bấm vào màn hình khi hero đang bận (`GameScene.cancel()`) sẽ dừng hero. Trên client, cú bấm đó chỉ dừng hero trên mirror, mà mirror thì không tự đi, nên hero thật trên host vẫn đi tới đích hoặc nghỉ cho tới khi đầy máu. Giờ client gửi lệnh `stop`, mỗi lệnh đang chạy một lần. Ngược lại, khi người chơi host bấm huỷ đúng lúc đồng đội đang tới lượt, `Dungeon.hero` đang là hero đồng đội; trước đây hành động bị huỷ là của đồng đội, giờ là của hero host.
+- **Nhận diện item:** loại potion, scroll, ring nào đã biết là trạng thái chung của cả game, không nằm trong hero, nên trước đây client chỉ biết khi xuống tầng mới. Ví dụ ring đã nhận diện bằng scroll mà client vẫn thấy "chưa rõ". Giờ bản cập nhật mang theo trạng thái này mỗi khi nó đổi.
+- **Kiểm thử mới `netGameSim -PnetMode=actions`** (một client): 16 thao tác nhỏ, mỗi thao tác kiểm tra riêng trên mirror của client: ăn, hai lệnh dùng item gửi trong cùng một lượt (chỉ tính một), dừng nghỉ, dừng đi đường dài, uống, mặc giáp, vứt rồi nhặt lại, ném (prompt chọn ô) rồi nhặt lại, huỷ một cú zap, câu trả lời cũ không có tác dụng, lệnh cho item không tồn tại, tìm kiếm, scroll dịch chuyển, nhận diện (prompt chọn item).
 - **Sửa test:**
-  - Khí độc được thả ở tầng 3, xa shopkeeper. Shopkeeper bị khí hại lần đầu thì dọn sạch khí quanh nó, lần sau thì bỏ chạy và huỷ hàng, giống luật gốc.
+  - Khí độc được thả ở tầng 3, xa shopkeeper, sau khi client đã rời màn hình alchemy (ở màn hình đó client không nhận bản cập nhật). Party chờ ở tầng 3 cho tới khi client kịp thấy khí. Shopkeeper bị khí hại lần đầu thì dọn sạch khí quanh nó, lần sau thì bỏ chạy và huỷ hàng, giống luật gốc.
+  - Mua xong thì shopkeeper rời đi. Đứng trong hành lang nó chắn đường bot, và bot va lại vào nó sẽ mở menu shop rồi bán mất đồ.
   - Chế độ deaths: party ở lại tầng 2 cho tới khi kịch bản chết xong. Sau đó host chơi một mình một lúc là đủ, không cần xuống tới tầng đích.
   - Lỗi trên luồng actor được in kèm stack.
   - Kịch bản chết chờ cú giết thật sự xảy ra rồi mới kiểm tra hồi sinh.

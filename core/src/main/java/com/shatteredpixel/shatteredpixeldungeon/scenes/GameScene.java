@@ -1760,6 +1760,8 @@ public class GameScene extends PixelScene {
 
 	public static boolean cancel() {
 		cellSelector.resetKeyHold();
+		Boolean coopStopped = CoopRemote.onCancel(); // COOP-HOOK: online, the player's own hero stops
+		if (coopStopped != null) return coopStopped || cancelCellSelector(); // COOP-HOOK
 		if (Dungeon.hero != null && (Dungeon.hero.curAction != null || Dungeon.hero.resting)) {
 			
 			Dungeon.hero.curAction = null;

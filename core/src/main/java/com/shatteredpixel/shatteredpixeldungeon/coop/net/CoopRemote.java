@@ -63,12 +63,14 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  *  upd  {seq, ...}          about 10 times a second: every char's id/pos/HP/HT/buffs, chars new to
  *                           the client (full bundles), the map when it changed, heaps when they
  *                           changed, hero bundles when they changed, which heroes wait for input,
- *                           animation/status/log events, and a checksum of the char state
+ *                           animation/status/log events, which kinds of potion/scroll/ring are
+ *                           identified when that changed, and a checksum of the char state
  * client -> host
  *  cell {cell}              the player tapped a cell (like a solo player tapping the map)
  *  act {kind}               wait, rest or search from the toolbar
  *  use {path, cls, action}  use an item (see CoopItems for paths)
  *  answer {id, cell|path|index}  the answer to a prompt (cell -1 / no path / index -1: cancelled)
+ *  stop                     the player tapped while the hero walks or rests: it stops
  * host -> client (prompts while executing that client's command)
  *  pcell {id, text}         choose a cell (wand zaps, throwing, targeted spells...)
  *  pitem {id, text, paths}  choose one of these items (upgrade, identify...)
@@ -96,6 +98,8 @@ public class CoopRemote {
 	public static final String PROMPT_ITEM = "pitem";
 	public static final String PROMPT_OPT  = "popt";
 	public static final String ANSWER      = "answer";
+	//the player stopped their hero's walk or rest (a tap while it is busy)
+	public static final String STOP        = "stop";
 
 	//kinds of command besides tapping a cell (wait, rest, search from the toolbar)
 	public static final int ACT_CELL      = 0;
@@ -189,6 +193,50 @@ public class CoopRemote {
 			return true;
 		}
 		return false;
+	}
+
+	//GameScene.cancel (a tap while the hero is busy, a window opening, the back key): in solo it
+	//stops Dungeon.hero's walk or rest. Online that must be this player's own hero: a client's
+	//mirror never walks (the host must stop it), and on the host Dungeon.hero may be a teammate in
+	//the middle of its turn. Returns whether the hero was busy, or null for the solo code.
+	public static Boolean onCancel(){
+		if (onlineClient()){
+			Hero me = localHero();
+			//choosing a target or an item for the host: cancelling that is the selector's job
+			if (me == null || !me.isAlive() || me.ready || lastPromptId >= 0) return false;
+			//once per command: more taps while it stops change nothing
+			if (!stopSent){
+				sendCommand( NetConnection.message( STOP ) );
+				stopSent = true;
+			}
+			return true;
+		}
+		if (onlineHost()){
+			Hero me = localHero();
+			//game code calls this too (Item.execute, while a command or a turn runs): there it is
+			//about Dungeon.hero, the hero acting. Only the host player's own input is redirected.
+			if (me == null || Dungeon.hero == me || applyingCommand
+					|| Thread.currentThread().getName().equals( "SHPD Actor Thread" )) return null;
+			boolean busy = me.curAction != null || me.resting;
+			me.curAction = null;
+			me.resting = false;
+			return busy;
+		}
+		return null;
+	}
+
+	private static volatile boolean stopSent = false;
+
+	//the host: a player stopped their hero (like GameScene.cancel on its own machine)
+	//tests: stop commands applied on the host
+	public static volatile int stopsApplied = 0;
+	public static volatile String lastStopState = "";
+
+	private static void stop( Hero h ){
+		stopsApplied++;
+		lastStopState = "cur " + (h.curAction == null ? "-" : h.curAction.getClass().getSimpleName()) + " resting " + h.resting + " ready " + h.ready;
+		h.curAction = null;
+		h.resting = false;
 	}
 
 	private static void act( Hero h, int kind ){
@@ -346,6 +394,9 @@ public class CoopRemote {
 						break;
 					case RESYNC:
 						snapshotNeeded = true;
+						break;
+					case STOP:
+						hostTask( idx, () -> stop( Coop.get( idx ) ) );
 						break;
 				}
 			}
@@ -927,8 +978,21 @@ public class CoopRemote {
 		mapHash = Arrays.hashCode( Dungeon.level.map );
 		heapHash = heapsBundle().toString().hashCode();
 		blobHash = blobsBundle( Dungeon.level ).toString().hashCode();
+		//the snapshot's game file has it
+		knownHash = knownBundle().toString().hashCode();
 		heroHash = new int[Coop.size()];
 		lastUpdate = System.currentTimeMillis();
+	}
+
+	private static int knownHash = 0;
+
+	//the identified kinds of potion, scroll and ring (with their colors/runes/gems), as saved
+	private static Bundle knownBundle(){
+		Bundle b = new Bundle();
+		com.shatteredpixel.shatteredpixeldungeon.items.scrolls.Scroll.save( b );
+		com.shatteredpixel.shatteredpixeldungeon.items.potions.Potion.save( b );
+		com.shatteredpixel.shatteredpixeldungeon.items.rings.Ring.save( b );
+		return b;
 	}
 
 	private static Bundle heapsBundle(){
@@ -1002,6 +1066,16 @@ public class CoopRemote {
 		//shared by the party
 		m.put( "gold", Dungeon.gold );
 		m.put( "energy", Dungeon.energy );
+
+		//which kinds of potion, scroll and ring are identified: game-wide, not part of any hero,
+		//so the heroes' bundles don't bring it (a ring identified by a scroll stayed "unknown"
+		//on the clients until the next floor)
+		Bundle known = knownBundle();
+		int kh = known.toString().hashCode();
+		if (kh != knownHash){
+			knownHash = kh;
+			m.put( "known", known );
+		}
 
 		if (lastUpdate - lastHeroBundles >= HERO_BUNDLE_MS){
 			lastHeroBundles = lastUpdate;
@@ -1397,9 +1471,19 @@ public class CoopRemote {
 			for (int i = 0; i < Math.min( waiting.length, Coop.size() ); i++){
 				Coop.get( i ).ready = waiting[i];
 			}
+			//our hero waits again: whatever was stopped (or not) is over
+			Hero me = localHero();
+			if (me != null && me.ready) stopSent = false;
 		}
 
 		if (m.contains( "blobs" )) applyBlobs( level, m.getBundle( "blobs" ) );
+
+		if (m.contains( "known" )){
+			Bundle k = m.getBundle( "known" );
+			com.shatteredpixel.shatteredpixeldungeon.items.scrolls.Scroll.restore( k );
+			com.shatteredpixel.shatteredpixeldungeon.items.potions.Potion.restore( k );
+			com.shatteredpixel.shatteredpixeldungeon.items.rings.Ring.restore( k );
+		}
 
 		if (m.contains( "gold" )){
 			Dungeon.gold = m.getInt( "gold" );
@@ -1675,6 +1759,8 @@ public class CoopRemote {
 
 	//client: a command for the host, tagged with the snapshot it was made on
 	static void sendCommand( Bundle m ){
+		//a new command: a later tap may stop what it starts
+		if (!STOP.equals( NetConnection.type( m ) )) stopSent = false;
 		m.put( "seq", clientSeq );
 		CoopOnline.client.send( m );
 	}

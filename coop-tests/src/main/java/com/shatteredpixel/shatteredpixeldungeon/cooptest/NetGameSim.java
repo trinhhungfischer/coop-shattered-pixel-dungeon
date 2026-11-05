@@ -62,10 +62,14 @@ public class NetGameSim {
 
 	//only the first client plays the item/shop/alchemy scenario, the others just play along
 	static boolean scenarioClient(){
-		return clientIndex == 1 && !deaths;
+		return clientIndex == 1 && !deaths && !actionsMode;
 	}
 
 	static boolean deaths = false;
+	//actions mode: small actions one by one (NetActionCases)
+	static boolean actionsMode = false;
+	static boolean clientSeen = false;
+	static int goneFrames = 0;
 	static int port;
 	static int targetDepth = 3;
 	static int frames = 0;
@@ -83,6 +87,7 @@ public class NetGameSim {
 		//deaths mode: no item scenario; the first client's hero dies with an ankh, comes back, dies
 		//for good, and the host plays on alone
 		deaths = args.length > (isHost ? 4 : 3) && args[isHost ? 4 : 3].equals( "deaths" );
+		actionsMode = args.length > (isHost ? 4 : 3) && args[isHost ? 4 : 3].equals( "actions" );
 		if (!isHost && args.length > 2) clientIndex = Integer.parseInt( args[2] );
 		CoopSim.customDriver = NetGameSim::frame;
 		CoopSim.launch();
@@ -145,6 +150,20 @@ public class NetGameSim {
 				}
 				//deaths: the host playing on alone for a while is enough (its bot can't fetch keys
 				//for locked doors, which the client's hero sometimes did on the way)
+				//actions: the client goes through its cases and leaves; the host plays along on depth 1
+				if (actionsMode){
+					int slot = CoopRemote.slotsByPartyIndex.length > 1 ? CoopRemote.slotsByPartyIndex[1] : 1;
+					if (CoopOnline.host.isConnected( slot )){
+						clientSeen = true;
+						goneFrames = 0;
+						lastProgress = System.currentTimeMillis();
+					} else if (clientSeen && ++goneFrames > 300){
+						log( "the client is done and gone, closing the session after " + actions + " actions; stops applied " + CoopRemote.stopsApplied + " (last: " + CoopRemote.lastStopState + ")" );
+						CoopOnline.leave();
+						CoopSim.finish();
+						return;
+					}
+				}
 				boolean aloneLongEnough = deaths && deathStage == 4 && Actor.coopTime( CoopRemote.localHero() ) > aloneFrom + 300;
 				if (Dungeon.depth >= targetDepth || aloneLongEnough){
 					log( "reached depth " + Dungeon.depth + " after " + actions + " actions, closing the session; host clicks " + safeClicks + " (" + unsafeClicks + " outside a safe point), bolts sent " + CoopRemote.missilesSent );
@@ -160,7 +179,8 @@ public class NetGameSim {
 				if (Coop.size() > 1 && !Actor.processing()){
 					Hero target = scenarioHero();
 					if (target != null){
-						if (deaths) deathScenario( target ); else hostScenario( target );
+						if (actionsMode) NetActionCases.hostSetup( target );
+						else if (deaths) deathScenario( target ); else hostScenario( target );
 					}
 				}
 				Hero me = CoopRemote.localHero();
@@ -179,6 +199,17 @@ public class NetGameSim {
 				}
 				if (!CoopRemote.inputReady()) return;
 				if (frames % 3 != 0) return;
+				if (actionsMode){
+					me.rest( false );
+					actions++;
+					return;
+				}
+				//items: the party stays on depth 3 until the client has seen the gas for a while
+				if (!deaths && Coop.size() > 1 && Dungeon.depth == 3 && (!gasPlaced || frames < gasFrame + 300) && Dungeon.level.getTransition( me.pos ) == null){
+					me.rest( false );
+					actions++;
+					return;
+				}
 				//deaths: the party stays on depth 2 until the client's hero is gone for good
 				if (deaths && deathStage < 4 && Dungeon.depth >= 2 && Dungeon.level.getTransition( me.pos ) == null){
 					me.rest( false );
@@ -198,7 +229,10 @@ public class NetGameSim {
 	// - on depth 2: a shopkeeper and an item for sale next to it
 	// - on depth 3: the alchemy screen, as if the hero had reached a pot
 	static boolean gaveItems = false, shopPlaced = false, alchemyOpened = false;
+	static com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.Shopkeeper keeper = null;
 	static String lastAlchemyLogged = "";
+	static int alchemyDoneFrame = 0;
+	static int gasFrame = 0;
 	static int depthFrame = 0;
 	static boolean gasPlaced = false;
 	static int lastClickAt = 0, safeClicks = 0, unsafeClicks = 0;
@@ -213,14 +247,30 @@ public class NetGameSim {
 			Dungeon.gold = 1000;
 			log( "gave the client's hero a scroll of upgrade, 3 seeds, level 3 and the party 1000 gold" );
 		}
-		//on depth 3, away from the shop: a shopkeeper clears gas around it at once, and flees with its
-		//wares if gas reaches it again (as in the solo game)
-		if (!gasPlaced && shopPlaced && Dungeon.depth >= 3 && frames > depthFrame + 300){
+		//on depth 3, away from the shop (a shopkeeper clears gas around it at once, and flees with its
+		//wares if gas reaches it again, as in the solo game), once the client is back from its alchemy
+		//screen (the mirror takes no updates there)
+		if (!gasPlaced && shopPlaced && Dungeon.depth >= 3 && (alchemyDoneFrame > 0 && frames > alchemyDoneFrame + 120 || frames > depthFrame + 3000)){
 			gasPlaced = true;
+			gasFrame = frames;
 			int cell = h.pos + Dungeon.level.width();
 			if (cell >= Dungeon.level.length() || Dungeon.level.solid[cell]) cell = h.pos;
 			GameScene.add( com.shatteredpixel.shatteredpixeldungeon.actors.blobs.Blob.seed( cell, 1000, com.shatteredpixel.shatteredpixeldungeon.actors.blobs.ToxicGas.class ) );
 			log( "released toxic gas at " + cell + " next to the client's hero" );
+		}
+		//once the potion is bought the shopkeeper leaves: standing in a corridor it would block the
+		//bots (they don't walk into others), and bumping into it again opens the shop, where the
+		//bot would sell its things
+		if (keeper != null && keeper.isAlive() && Dungeon.level.mobs.contains( keeper )){
+			boolean forSale = false;
+			for (com.shatteredpixel.shatteredpixeldungeon.items.Heap hp : Dungeon.level.heaps.valueList()){
+				if (hp.type == com.shatteredpixel.shatteredpixeldungeon.items.Heap.Type.FOR_SALE) forSale = true;
+			}
+			if (!forSale){
+				keeper.flee();
+				keeper = null;
+				log( "the shopkeeper left after the sale" );
+			}
 		}
 		//the host player's own button clicks must run while the game logic is parked
 		if (actions > lastClickAt + 40){
@@ -247,6 +297,7 @@ public class NetGameSim {
 			shopPlaced = true;
 			com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.Shopkeeper sk = new com.shatteredpixel.shatteredpixeldungeon.actors.mobs.npcs.Shopkeeper();
 			sk.pos = keeper;
+			NetGameSim.keeper = sk;
 			GameScene.add( sk );
 			com.shatteredpixel.shatteredpixeldungeon.items.Heap heap = level.drop( new com.shatteredpixel.shatteredpixeldungeon.items.potions.PotionOfHealing().identify(), ware );
 			heap.type = com.shatteredpixel.shatteredpixeldungeon.items.Heap.Type.FOR_SALE;
@@ -261,6 +312,7 @@ public class NetGameSim {
 		String r = com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopCommands.lastAlchemyResult;
 		if (!r.equals( lastAlchemyLogged )){
 			lastAlchemyLogged = r;
+			alchemyDoneFrame = frames;
 			log( "alchemy: " + r );
 		}
 	}
@@ -423,6 +475,10 @@ public class NetGameSim {
 					if (Dungeon.hero.heroClass != expected) CoopSim.problem( "client controls a " + Dungeon.hero.heroClass + ", expected its " + expected );
 				}
 				if (frames % 1500 == 0) log( "frame " + frames + " actions " + actions + " shop " + shopStage + " | " + CoopRemote.clientDebug() );
+				if (actionsMode){
+					if (NetActionCases.clientFrame()) CoopSim.finish();
+					return;
+				}
 				if (answerPrompts()) return;
 				if (!CoopRemote.inputReady()) return;
 				if (frames % 3 != 0) return;
