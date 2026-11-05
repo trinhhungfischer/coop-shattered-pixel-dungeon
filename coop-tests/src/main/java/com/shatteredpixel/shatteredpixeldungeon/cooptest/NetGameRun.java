@@ -80,7 +80,7 @@ public class NetGameRun {
 				String l;
 				while ((l = r.readLine()) != null){
 					if (l.startsWith( "[HOST]" ) || l.startsWith( "[CLIENT" ) || l.startsWith( "[SIM]" )){
-						synchronized (lines){ lines.add( l.length() > 400 && !l.contains( "PROBLEM" ) ? l.substring( 0, 400 ) : l ); }
+						synchronized (lines){ lines.add( l.length() > 3000 && !l.contains( "PROBLEM" ) ? l.substring( 0, 3000 ) : l ); }
 					}
 				}
 			} catch (Exception ignored){

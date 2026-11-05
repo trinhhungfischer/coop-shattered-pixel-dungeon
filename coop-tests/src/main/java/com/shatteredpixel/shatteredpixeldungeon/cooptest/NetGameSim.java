@@ -143,7 +143,10 @@ public class NetGameSim {
 					lastProgress = System.currentTimeMillis();
 					log( "now on depth " + Dungeon.depth );
 				}
-				if (Dungeon.depth >= targetDepth){
+				//deaths: the host playing on alone for a while is enough (its bot can't fetch keys
+				//for locked doors, which the client's hero sometimes did on the way)
+				boolean aloneLongEnough = deaths && deathStage == 4 && Actor.coopTime( CoopRemote.localHero() ) > aloneFrom + 300;
+				if (Dungeon.depth >= targetDepth || aloneLongEnough){
 					log( "reached depth " + Dungeon.depth + " after " + actions + " actions, closing the session; host clicks " + safeClicks + " (" + unsafeClicks + " outside a safe point), bolts sent " + CoopRemote.missilesSent );
 					if (!deaths && safeClicks == 0) CoopSim.problem( "the host's clicks never ran" );
 					if (deaths && deathStage < 4) CoopSim.problem( "the deaths scenario stopped at stage " + deathStage );
@@ -171,10 +174,17 @@ public class NetGameSim {
 							.append(" dungeonHero=P").append(Coop.indexOf(Dungeon.hero)+1).append(" actions=").append(actions)
 							.append(" lastUse=").append(CoopRemote.lastUseResult).append(" dropped stale/notWaiting=").append(CoopRemote.droppedStale).append("/").append(CoopRemote.droppedNotWaiting);
 					sb.append(" | ").append(CoopSim.Driver.state());
+					sb.append(" | ").append(botView( me ));
 					log( sb.toString() );
 				}
 				if (!CoopRemote.inputReady()) return;
 				if (frames % 3 != 0) return;
+				//deaths: the party stays on depth 2 until the client's hero is gone for good
+				if (deaths && deathStage < 4 && Dungeon.depth >= 2 && Dungeon.level.getTransition( me.pos ) == null){
+					me.rest( false );
+					actions++;
+					return;
+				}
 				int cell = chooseCell( me );
 				if (cell != -1){
 					CoopRemote.onCellSelected( cell );
@@ -203,17 +213,13 @@ public class NetGameSim {
 			Dungeon.gold = 1000;
 			log( "gave the client's hero a scroll of upgrade, 3 seeds, level 3 and the party 1000 gold" );
 		}
-		//once the shopping is done (the party is still there a while, the mirror is surely loaded):
-		//gas reaching the shopkeeper twice makes it flee with its wares, as in the solo game
-		boolean forSale = false;
-		for (com.shatteredpixel.shatteredpixeldungeon.items.Heap hp : Dungeon.level.heaps.valueList()){
-			if (hp.type == com.shatteredpixel.shatteredpixeldungeon.items.Heap.Type.FOR_SALE) forSale = true;
-		}
-		if (!gasPlaced && shopPlaced && (!forSale || Dungeon.depth >= 3)){
+		//on depth 3, away from the shop: a shopkeeper clears gas around it at once, and flees with its
+		//wares if gas reaches it again (as in the solo game)
+		if (!gasPlaced && shopPlaced && Dungeon.depth >= 3 && frames > depthFrame + 300){
 			gasPlaced = true;
 			int cell = h.pos + Dungeon.level.width();
 			if (cell >= Dungeon.level.length() || Dungeon.level.solid[cell]) cell = h.pos;
-			GameScene.add( com.shatteredpixel.shatteredpixeldungeon.actors.blobs.Blob.seed( cell, 300, com.shatteredpixel.shatteredpixeldungeon.actors.blobs.ToxicGas.class ) );
+			GameScene.add( com.shatteredpixel.shatteredpixeldungeon.actors.blobs.Blob.seed( cell, 1000, com.shatteredpixel.shatteredpixeldungeon.actors.blobs.ToxicGas.class ) );
 			log( "released toxic gas at " + cell + " next to the client's hero" );
 		}
 		//the host player's own button clicks must run while the game logic is parked
@@ -293,6 +299,7 @@ public class NetGameSim {
 	}
 	static int deathStage = 0, deathFrame = 0;
 	static boolean sawDown = false;
+	static float aloneFrom = 0;
 
 	static void deathScenario( Hero h ){
 		if (deathStage == 0 && Dungeon.depth == 2 && frames > depthFrame + 400 && com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.isWaiting( h )){
@@ -304,6 +311,7 @@ public class NetGameSim {
 			kill( h );
 		} else if (deathStage == 3 && Coop.isDead( h )){
 			deathStage = 4;
+			aloneFrom = Actor.coopTime( CoopRemote.localHero() );
 			log( "the client's hero is dead for good, " + Coop.aliveHeroes().size() + " hero(es) alive" );
 		} else if (deathStage == 1 && !sawDown){
 			//the kill runs on the hero's level a moment later
@@ -368,7 +376,8 @@ public class NetGameSim {
 					//the host closed the session
 					log( "session closed by the host: " + CoopRemote.updatesApplied + " updates applied, "
 							+ CoopRemote.checksumMismatches + " checksum mismatches, last depth " + Dungeon.depth );
-					if (CoopRemote.updatesApplied < 30) CoopSim.problem( "client applied only " + CoopRemote.updatesApplied + " updates" );
+					//(a deaths run can be short: the host may be done soon after the client's hero is gone)
+					if (CoopRemote.updatesApplied < (deaths ? 10 : 30)) CoopSim.problem( "client applied only " + CoopRemote.updatesApplied + " updates" );
 					if (CoopRemote.checksumMismatches > 0) CoopSim.problem( "mirror differed from the host after " + CoopRemote.checksumMismatches + " updates; last: " + CoopRemote.lastMismatch );
 					if (lastDepth < 2) CoopSim.problem( "client never followed the party down (depth " + lastDepth + ")" );
 					if (!scenarioClient()){
@@ -405,6 +414,7 @@ public class NetGameSim {
 					return;
 				}
 				if (!(Game.scene() instanceof GameScene) || !CoopRemote.onlineClient() || Dungeon.hero == null) return;
+				myHero();
 				if (Dungeon.depth != lastDepth){
 					lastDepth = Dungeon.depth;
 					lastProgress = System.currentTimeMillis();
@@ -436,7 +446,7 @@ public class NetGameSim {
 	static int lastAnswered = -1;
 
 	static com.shatteredpixel.shatteredpixeldungeon.items.weapon.melee.MagesStaff staff(){
-		for (com.shatteredpixel.shatteredpixeldungeon.items.Item i : com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopItems.all( Dungeon.hero )){
+		for (com.shatteredpixel.shatteredpixeldungeon.items.Item i : com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopItems.all( myHero() )){
 			if (i instanceof com.shatteredpixel.shatteredpixeldungeon.items.weapon.melee.MagesStaff) return (com.shatteredpixel.shatteredpixeldungeon.items.weapon.melee.MagesStaff) i;
 		}
 		return null;
@@ -637,9 +647,17 @@ public class NetGameSim {
 		return false;
 	}
 
+	//the client's own hero, as last seen while connected: once the host closes the session the
+	//client is no longer online and Dungeon.hero / localHero() point at the party's first hero
+	static Hero lastMe = null;
+	static Hero myHero(){
+		if (CoopRemote.onlineClient()) lastMe = CoopRemote.localHero();
+		return lastMe != null ? lastMe : Dungeon.hero;
+	}
+
 	static int count( Class<?> cls ){
 		int n = 0;
-		for (com.shatteredpixel.shatteredpixeldungeon.items.Item i : com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopItems.all( Dungeon.hero )){
+		for (com.shatteredpixel.shatteredpixeldungeon.items.Item i : com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopItems.all( myHero() )){
 			if (cls.isInstance( i )) n += i.quantity();
 		}
 		return n;
@@ -660,7 +678,7 @@ public class NetGameSim {
 		potionsBefore = count( com.shatteredpixel.shatteredpixeldungeon.items.potions.Potion.class );
 		seedsBefore = count( com.shatteredpixel.shatteredpixeldungeon.plants.Sungrass.Seed.class );
 		com.shatteredpixel.shatteredpixeldungeon.items.Item seeds = null;
-		for (com.shatteredpixel.shatteredpixeldungeon.items.Item i : com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopItems.all( Dungeon.hero )){
+		for (com.shatteredpixel.shatteredpixeldungeon.items.Item i : com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopItems.all( myHero() )){
 			if (i instanceof com.shatteredpixel.shatteredpixeldungeon.plants.Sungrass.Seed) seeds = i;
 		}
 		if (seeds == null || seeds.quantity() < 3){
@@ -674,7 +692,7 @@ public class NetGameSim {
 	}
 
 	static void checkScenario(){
-		Hero me = Dungeon.hero; log( "end hero: " + me.heroClass + " local " + CoopRemote.localHero().heroClass + " slot " + com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopOnline.localSlot + " party " + java.util.Arrays.toString( CoopRemote.slotsByPartyIndex ) + " bag " + com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopItems.all( me ).size() + " items" );
+		Hero me = myHero(); log( "end hero: " + me.heroClass + " local " + CoopRemote.localHero().heroClass + " slot " + com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopOnline.localSlot + " party " + java.util.Arrays.toString( CoopRemote.slotsByPartyIndex ) + " bag " + com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopItems.all( me ).size() + " items" );
 		log( "scenario: shop stage " + shopStage + ", gold " + goldBefore + " -> " + Dungeon.gold
 				+ ", healing potions " + count( com.shatteredpixel.shatteredpixeldungeon.items.potions.PotionOfHealing.class )
 				+ ", reconnects " + CoopRemote.reconnects + ", seeds " + count( com.shatteredpixel.shatteredpixeldungeon.plants.Sungrass.Seed.class )
@@ -710,11 +728,27 @@ public class NetGameSim {
 	// so it works on the client's mirror too)
 	// ---------------------------------------------------------------------------------
 
+	static int lastChosen = -1;
+	//the bot's surroundings: the last tap, and for each neighbour its terrain, distance to the exit and char
+	static String botView( Hero me ){
+		Level level = Dungeon.level;
+		StringBuilder sb = new StringBuilder( "bot: tap " + lastChosen + " stuck " + stuck + " terrain " + level.map[me.pos] + " cur " + (me.curAction == null ? "-" : me.curAction.getClass().getSimpleName()) + " last " + (me.lastAction == null ? "-" : me.lastAction.getClass().getSimpleName()) + " n=[" );
+		for (int i : PathFinder.NEIGHBOURS9){
+			int c = me.pos + i;
+			if (c < 0 || c >= level.length()) continue;
+			Actor a = Actor.findChar( c );
+			com.shatteredpixel.shatteredpixeldungeon.items.Heap hp = level.heaps.get( c );
+			sb.append( c ).append( ":t" ).append( level.map[c] ).append( level.passable[c] ? "p" : "" ).append( level.avoid[c] ? "a" : "" ).append( level.pit[c] ? "v" : "" )
+					.append( a == null ? "" : "@" + a.getClass().getSimpleName() ).append( hp == null ? "" : "$" + hp.type ).append( " " );
+		}
+		return sb.append( "]" ).toString();
+	}
 	static int lastPos = -1;
 	static int stuck = 0;
 
 	static int chooseCell( Hero me ){
 		int c = chooseCell0( me );
+		lastChosen = c;
 		//tapping yourself on the stairs you came down would take the party back up: wait instead
 		LevelTransition here = Dungeon.level.getTransition( me.pos );
 		if (c == me.pos && here != null && here.type != LevelTransition.Type.REGULAR_EXIT){

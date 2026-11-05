@@ -401,10 +401,16 @@ public class CoopRemote {
 		//nothing acts here: the host's screen goes back to its own hero (e.g. after a teammate's
 		//resurrection left the pointer on them)
 		Hero me = localHero();
-		if (me != null && me.isAlive() && !Coop.isDead( me ) && Dungeon.hero != me) Coop.setActive( me );
+		if (me != null && me.isAlive() && !Coop.isDead( me ) && Dungeon.hero != me && heroAwaitingResurrection() == null){
+			Coop.setActive( me );
+		}
 
 		waitForDropped();
 		parkForTasks();
+		if (Game.switchingScene()){
+			waitForSceneSwitch();
+			return;
+		}
 
 		if (Dungeon.level != sentLevel) snapshotNeeded = true;
 		long now = System.currentTimeMillis();
@@ -458,9 +464,28 @@ public class CoopRemote {
 				//an ankh's resurrection about to run works on Dungeon.hero: keep pointing at the
 				//hero coming back (beforeScan points back at ours afterwards)
 				boolean resurrecting = InterlevelScene.mode == InterlevelScene.Mode.RESURRECT && Game.switchingScene();
-				if (me != null && me.isAlive() && !resurrecting) Coop.setActive( me );
+				Hero pending = heroAwaitingResurrection();
+				if (resurrecting){
+					//stays
+				} else if (pending != null){
+					//while a player chooses in WndResurrect the game is paused like in solo, where
+					//Dungeon.hero is the fallen hero: GameScene only wakes the game logic for a living
+					//Dungeon.hero, so pointing back at ours would start turns now
+					Coop.setActive( pending );
+				} else if (me != null && me.isAlive()){
+					Coop.setActive( me );
+				}
 			}
 		});
+	}
+
+	//the hero that fell holding an ankh while its player chooses in WndResurrect (null if none)
+	private static Hero heroAwaitingResurrection(){
+		if (!resurrectPending()) return null;
+		for (Hero h : Coop.heroes()){
+			if (!h.isAlive() && !Coop.isDead( h )) return h;
+		}
+		return null;
 	}
 
 	//Game.runOnRenderThread: NPCs, shops and many items show their windows a frame later. A
@@ -498,6 +523,25 @@ public class CoopRemote {
 		}
 	}
 
+	//a task just started a scene switch (an ankh's resurrection, the stairs): nothing may act on this
+	//scene any more. A turn now would move Dungeon.hero (Hero.act points it at the acting hero), and
+	//the next scene works on Dungeon.hero: InterlevelScene would resurrect the wrong hero. The old
+	//scene's destroy() interrupts this thread; Actor.process then sees the interrupt and stops.
+	private static void waitForSceneSwitch(){
+		com.watabou.noosa.Scene before = Game.scene();
+		long until = System.currentTimeMillis() + 10000;
+		synchronized (park){
+			try {
+				while (Actor.keepActorThreadAlive && System.currentTimeMillis() < until
+						&& (Game.switchingScene() || Game.scene() == before)){
+					park.wait( 50 );
+				}
+			} catch (InterruptedException e){
+				Thread.currentThread().interrupt();
+			}
+		}
+	}
+
 	//GameScene.update on the host: run the queued commands while the game logic is parked
 	private static boolean resurrectPending(){
 		return com.shatteredpixel.shatteredpixeldungeon.windows.WndResurrect.instance != null;
@@ -513,7 +557,10 @@ public class CoopRemote {
 		//waits for the next safe point, after the game has moved on
 		int queued = tasks.size();
 		Runnable r;
-		while (queued-- > 0 && (r = tasks.poll()) != null){
+		//a task that started a scene switch (an ankh's resurrection, taking the stairs) ends the run:
+		//the next scene works on Dungeon.hero as that task left it, so nothing else may move it now.
+		//What's left runs at a safe point of the next scene.
+		while (queued-- > 0 && !Game.switchingScene() && (r = tasks.poll()) != null){
 			try {
 				r.run();
 			} catch (RuntimeException e){

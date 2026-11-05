@@ -133,8 +133,14 @@ Phần này làm và kiểm thử **trong hotseat trước** (bot headless), r�
   - `netGameSim -PnetClients=2`: 3 người chơi.
   - `netGameSim -PnetMode=deaths`: chết khi có Ankh, hồi sinh, chết hẳn, rồi host chơi một mình.
 - **Hero khán giả khi đổi tầng:** hero đã chết đi theo tới ô party đến. Trước đây nó giữ ô của tầng cũ, có thể nằm ngoài bản đồ mới, và code đọc ô của hero đó (màn hình của client đang làm khán giả) bị lỗi vượt chỉ số.
+- **Hồi sinh nhầm hero (host bị kẹt hoặc crash):** khoảng 1 trên 20 lần, client chọn hồi sinh xong thì host hồi sinh hero của chính mình. Hero của client vẫn 0 HP, không có sprite, và khi tới lượt nó thì `Hero.ready()` văng NullPointerException hoặc game đứng hẳn. `InterlevelScene` hồi sinh hero mà `Dungeon.hero` đang trỏ tới, và có ba đường kéo con trỏ khỏi hero đang hồi sinh:
+  - Các task xếp sau câu trả lời vẫn chạy trong cùng frame, ví dụ một lần bấm của host. Giờ khi đang chuyển scene thì không chạy thêm task nào; chúng sẽ chạy ở scene sau.
+  - Luồng actor được thả ra khỏi điểm park rồi cho một actor chạy lượt (`Hero.act` đặt con trỏ về hero đang hành động). Giờ luồng actor chờ tới khi scene đổi xong.
+  - Trong lúc chờ lựa chọn hồi sinh, con trỏ bị trả về hero của host. `GameScene` thấy hero đó còn sống nên đánh thức luồng actor. Giờ con trỏ ở lại hero đang chờ hồi sinh, game dừng giống bản solo.
 - **Sửa test:**
-  - Khí độc chỉ được thả sau khi mua xong. Shopkeeper bị khí hại hai lần thì bỏ chạy và huỷ hàng, giống luật gốc.
+  - Khí độc được thả ở tầng 3, xa shopkeeper. Shopkeeper bị khí hại lần đầu thì dọn sạch khí quanh nó, lần sau thì bỏ chạy và huỷ hàng, giống luật gốc.
+  - Chế độ deaths: party ở lại tầng 2 cho tới khi kịch bản chết xong. Sau đó host chơi một mình một lúc là đủ, không cần xuống tới tầng đích.
+  - Lỗi trên luồng actor được in kèm stack.
   - Kịch bản chết chờ cú giết thật sự xảy ra rồi mới kiểm tra hồi sinh.
   - Log giữ đủ dòng PROBLEM, có stack của luồng actor.
 
@@ -143,7 +149,7 @@ Phần này làm và kiểm thử **trong hotseat trước** (bot headless), r�
 - Khi người chơi host dùng alchemy, game dừng với mọi người.
 - Nhấn giữ (long click) của host vẫn chạy ngay, vì game cần kết quả trả về của nó ngay lúc đó.
 - Các hiệu ứng nhỏ khác (tia sét, tia sáng, hạt bụi, rung màn hình) chưa hiện trên client.
-- Khoảng 1 trên 20 lần chạy test deaths, host đứng sau khi client chọn hồi sinh: hero vẫn ở 0 HP và luồng actor chờ với một actor đang chạy. Chưa tái hiện lại được kể từ khi log ghi đủ stack.
+- Bot của test không biết lấy chìa để mở cửa khoá và đôi khi lên xuống cầu thang lung tung. Khi chạy nhiều test song song (máy tải nặng), có lần bot không tới được tầng đích. Đây là giới hạn của bot, không phải lỗi game: chạy lại trên code trước bản sửa với cùng mức tải cũng fail y như vậy.
 
 ## 6. Rủi ro chính
 

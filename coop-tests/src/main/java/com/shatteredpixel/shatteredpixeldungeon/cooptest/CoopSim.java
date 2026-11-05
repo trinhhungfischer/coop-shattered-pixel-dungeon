@@ -77,7 +77,7 @@ public class CoopSim {
 		File dir = java.nio.file.Files.createTempDirectory("spd-coopsim").toFile();
 		String base = dir.getAbsolutePath().replace('\\', '/') + "/";
 		Thread.setDefaultUncaughtExceptionHandler( (t, e) -> {
-			problem("uncaught exception on " + t.getName() + ": " + stack(e));
+			problem("uncaught exception on " + t.getName() + ": " + stack(e).replace("\r", "").replace("\n", " | "));
 			finish();
 		});
 		Game.version = "4.0.2-INDEV-coopsim";
@@ -97,7 +97,7 @@ public class CoopSim {
 		String base = dir.getAbsolutePath().replace('\\', '/') + "/";
 
 		Thread.setDefaultUncaughtExceptionHandler( (t, e) -> {
-			problem("uncaught exception on " + t.getName() + ": " + stack(e));
+			problem("uncaught exception on " + t.getName() + ": " + stack(e).replace("\r", "").replace("\n", " | "));
 			finish();
 		});
 
