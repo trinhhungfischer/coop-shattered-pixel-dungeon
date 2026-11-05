@@ -979,6 +979,8 @@ public class CoopSim {
 						sb.append(dy < 2 ? "/" : "]");
 					}
 					sb.append(" exitTerrain=").append(Dungeon.level.map[ex.cell()]);
+					com.shatteredpixel.shatteredpixeldungeon.items.Heap onExit = Dungeon.level.heaps.get( ex.cell() );
+					if (onExit != null) sb.append(" exitHeap=").append(onExit.type).append(onExit.items.size()).append(onExit.peek().getClass().getSimpleName());
 					for (com.shatteredpixel.shatteredpixeldungeon.items.Heap heap : Dungeon.level.heaps.valueList()){
 						boolean key = false;
 						for (com.shatteredpixel.shatteredpixeldungeon.items.Item i : heap.items) if (i instanceof com.shatteredpixel.shatteredpixeldungeon.items.keys.Key) key = true;

@@ -97,12 +97,12 @@ public class NetGameSim {
 		try {
 			if (isHost) hostFrame(); else clientFrame();
 		} catch (Exception e){
-			CoopSim.problem( (isHost ? "host" : "client") + " driver crashed: " + CoopSim.stack( e ) );
+			CoopSim.problem( (isHost ? "host" : "client") + " driver crashed: " + CoopSim.stack( e ).replace( "\r", "" ).replace( "\n", " | " ) );
 			CoopSim.finish();
 		}
 		if (System.currentTimeMillis() - lastProgress > 120_000){
 			CoopSim.problem( (isHost ? "host" : "client") + " made no progress for 2 minutes in phase " + phase
-					+ " depth " + Dungeon.depth + (Dungeon.hero != null ? " pos " + Dungeon.hero.pos : "") + (isHost ? "" : " | " + CoopRemote.clientDebug() + " | replay error: " + CoopRemote.lastReplayError) + " | " + CoopSim.Driver.actorDump() );
+					+ " depth " + Dungeon.depth + (Dungeon.hero != null ? " pos " + Dungeon.hero.pos : "") + (isHost ? "" : " | " + CoopRemote.clientDebug() + " | replay error: " + CoopRemote.lastReplayError) + " | " + CoopSim.Driver.state() + " | " + CoopSim.Driver.actorDump() );
 			CoopSim.finish();
 		}
 	}
@@ -170,6 +170,7 @@ public class NetGameSim {
 					sb.append(" processing=").append(Actor.processing()).append(" inputReady=").append(CoopRemote.inputReady())
 							.append(" dungeonHero=P").append(Coop.indexOf(Dungeon.hero)+1).append(" actions=").append(actions)
 							.append(" lastUse=").append(CoopRemote.lastUseResult).append(" dropped stale/notWaiting=").append(CoopRemote.droppedStale).append("/").append(CoopRemote.droppedNotWaiting);
+					sb.append(" | ").append(CoopSim.Driver.state());
 					log( sb.toString() );
 				}
 				if (!CoopRemote.inputReady()) return;
@@ -202,8 +203,13 @@ public class NetGameSim {
 			Dungeon.gold = 1000;
 			log( "gave the client's hero a scroll of upgrade, 3 seeds, level 3 and the party 1000 gold" );
 		}
-		//with the shop, where the party stays a while (the mirror is surely loaded by then)
-		if (!gasPlaced && shopPlaced){
+		//once the shopping is done (the party is still there a while, the mirror is surely loaded):
+		//gas reaching the shopkeeper twice makes it flee with its wares, as in the solo game
+		boolean forSale = false;
+		for (com.shatteredpixel.shatteredpixeldungeon.items.Heap hp : Dungeon.level.heaps.valueList()){
+			if (hp.type == com.shatteredpixel.shatteredpixeldungeon.items.Heap.Type.FOR_SALE) forSale = true;
+		}
+		if (!gasPlaced && shopPlaced && (!forSale || Dungeon.depth >= 3)){
 			gasPlaced = true;
 			int cell = h.pos + Dungeon.level.width();
 			if (cell >= Dungeon.level.length() || Dungeon.level.solid[cell]) cell = h.pos;
@@ -286,6 +292,7 @@ public class NetGameSim {
 		}, 0 );
 	}
 	static int deathStage = 0, deathFrame = 0;
+	static boolean sawDown = false;
 
 	static void deathScenario( Hero h ){
 		if (deathStage == 0 && Dungeon.depth == 2 && frames > depthFrame + 400 && com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.isWaiting( h )){
@@ -298,6 +305,9 @@ public class NetGameSim {
 		} else if (deathStage == 3 && Coop.isDead( h )){
 			deathStage = 4;
 			log( "the client's hero is dead for good, " + Coop.aliveHeroes().size() + " hero(es) alive" );
+		} else if (deathStage == 1 && !sawDown){
+			//the kill runs on the hero's level a moment later
+			if (!h.isAlive() || com.shatteredpixel.shatteredpixeldungeon.windows.WndResurrect.instance != null) sawDown = true;
 		} else if (deathStage == 1 && h.isAlive() && com.shatteredpixel.shatteredpixeldungeon.windows.WndResurrect.instance == null
 				&& Game.scene() instanceof GameScene){
 			deathStage = 2;
@@ -664,7 +674,7 @@ public class NetGameSim {
 	}
 
 	static void checkScenario(){
-		Hero me = Dungeon.hero;
+		Hero me = Dungeon.hero; log( "end hero: " + me.heroClass + " local " + CoopRemote.localHero().heroClass + " slot " + com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopOnline.localSlot + " party " + java.util.Arrays.toString( CoopRemote.slotsByPartyIndex ) + " bag " + com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopItems.all( me ).size() + " items" );
 		log( "scenario: shop stage " + shopStage + ", gold " + goldBefore + " -> " + Dungeon.gold
 				+ ", healing potions " + count( com.shatteredpixel.shatteredpixeldungeon.items.potions.PotionOfHealing.class )
 				+ ", reconnects " + CoopRemote.reconnects + ", seeds " + count( com.shatteredpixel.shatteredpixeldungeon.plants.Sungrass.Seed.class )

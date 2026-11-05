@@ -132,12 +132,18 @@ Phần này làm và kiểm thử **trong hotseat trước** (bot headless), r�
 - **Kiểm thử mới:**
   - `netGameSim -PnetClients=2`: 3 người chơi.
   - `netGameSim -PnetMode=deaths`: chết khi có Ankh, hồi sinh, chết hẳn, rồi host chơi một mình.
+- **Hero khán giả khi đổi tầng:** hero đã chết đi theo tới ô party đến. Trước đây nó giữ ô của tầng cũ, có thể nằm ngoài bản đồ mới, và code đọc ô của hero đó (màn hình của client đang làm khán giả) bị lỗi vượt chỉ số.
+- **Sửa test:**
+  - Khí độc chỉ được thả sau khi mua xong. Shopkeeper bị khí hại hai lần thì bỏ chạy và huỷ hàng, giống luật gốc.
+  - Kịch bản chết chờ cú giết thật sự xảy ra rồi mới kiểm tra hồi sinh.
+  - Log giữ đủ dòng PROBLEM, có stack của luồng actor.
 
 **Hạn chế còn lại:**
 - Kết quả alchemy ngẫu nhiên có thể hiện khác trên màn hình client cho tới khi túi đồ thật từ host về.
 - Khi người chơi host dùng alchemy, game dừng với mọi người.
 - Nhấn giữ (long click) của host vẫn chạy ngay, vì game cần kết quả trả về của nó ngay lúc đó.
 - Các hiệu ứng nhỏ khác (tia sét, tia sáng, hạt bụi, rung màn hình) chưa hiện trên client.
+- Khoảng 1 trên 20 lần chạy test deaths, host đứng sau khi client chọn hồi sinh: hero vẫn ở 0 HP và luồng actor chờ với một actor đang chạy. Chưa tái hiện lại được kể từ khi log ghi đủ stack.
 
 ## 6. Rủi ro chính
 

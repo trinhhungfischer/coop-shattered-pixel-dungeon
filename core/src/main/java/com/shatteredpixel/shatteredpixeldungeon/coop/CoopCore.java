@@ -355,6 +355,12 @@ public class CoopCore {
 
 		fovs.clear();
 
+		//spectators come along too: a cell of the previous level could be outside this one's map
+		//(a spectating client's screen and anything reading its hero's cell)
+		for (Hero h : Coop.heroes()){
+			if (h != Dungeon.hero && (Coop.isDead( h ) || !h.isAlive())) h.pos = pos;
+		}
+
 		HashSet<Integer> taken = new HashSet<>();
 		taken.add(pos);
 		for (Hero h : Coop.aliveHeroes()){
