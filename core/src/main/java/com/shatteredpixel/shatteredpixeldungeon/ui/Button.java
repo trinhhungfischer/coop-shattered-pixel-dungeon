@@ -22,6 +22,7 @@
 package com.shatteredpixel.shatteredpixeldungeon.ui;
 
 import com.shatteredpixel.shatteredpixeldungeon.SPDSettings;
+import com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopRemote;
 import com.watabou.input.ControllerHandler;
 import com.watabou.input.GameAction;
 import com.watabou.input.KeyBindings;
@@ -70,15 +71,16 @@ public class Button extends Component {
 			protected void onClick( PointerEvent event ) {
 				if (clickReady) {
 					killTooltip();
+					//COOP-HOOK: online, the host player's clicks run at a safe point (CoopRemote.uiClick)
 					switch (event.button){
 						case PointerEvent.LEFT: default:
-							Button.this.onClick();
+							CoopRemote.uiClick( Button.this::onClick );
 							break;
 						case PointerEvent.RIGHT:
-							Button.this.onRightClick();
+							CoopRemote.uiClick( Button.this::onRightClick );
 							break;
 						case PointerEvent.MIDDLE:
-							Button.this.onMiddleClick();
+							CoopRemote.uiClick( Button.this::onMiddleClick );
 							break;
 					}
 
@@ -132,7 +134,7 @@ public class Button extends Component {
 						Button.this.onPointerUp();
 						if (pressedButton == Button.this) {
 							pressedButton = null;
-							if (clickReady) onClick();
+							if (clickReady) CoopRemote.uiClick( Button.this::onClick ); // COOP-HOOK
 						}
 					}
 					return true;

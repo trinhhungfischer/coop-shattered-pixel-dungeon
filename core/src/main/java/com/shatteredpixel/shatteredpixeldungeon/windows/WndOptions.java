@@ -37,8 +37,13 @@ public class WndOptions extends Window {
 	protected static final int MARGIN 		= 2;
 	protected static final int BUTTON_HEIGHT	= 18;
 
+	//COOP-HOOK: the texts, so online play can show this window on another player's screen
+	public String coopTitle, coopMessage;
+	public String[] coopOptions;
+
 	public WndOptions(Image icon, String title, String message, String... options) {
 		super();
+		coopTitle = title; coopMessage = message; coopOptions = options; // COOP-HOOK
 
 		int width = PixelScene.landscape() ? WIDTH_L : WIDTH_P;
 
@@ -56,6 +61,7 @@ public class WndOptions extends Window {
 	
 	public WndOptions( String title, String message, String... options ) {
 		super();
+		coopTitle = title; coopMessage = message; coopOptions = options; // COOP-HOOK
 
 		int width = PixelScene.landscape() ? WIDTH_L : WIDTH_P;
 

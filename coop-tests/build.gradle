@@ -27,3 +27,26 @@ tasks.register('simClasspath') {
     dependsOn sourceSets.main.runtimeClasspath, 'classes'
     doLast { println "CP=" + sourceSets.main.runtimeClasspath.asPath }
 }
+
+//network layer tests on the loopback address: ./gradlew coop-tests:netTest
+tasks.register('netTest', JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.shatteredpixel.shatteredpixeldungeon.cooptest.NetTest'
+}
+
+//the online lobby inside the headless game: ./gradlew coop-tests:lobbySim
+tasks.register('lobbySim', JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.shatteredpixel.shatteredpixeldungeon.cooptest.LobbySim'
+}
+
+//online coop end to end: a host and a client game process on the loopback address
+//./gradlew coop-tests:netGameSim [-PnetDepth=4] [-PnetClients=1] [-PnetMode=items|deaths|actions]
+//(actions: one client goes through small actions one by one, see NetActionCases)
+tasks.register('netGameSim', JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.shatteredpixel.shatteredpixeldungeon.cooptest.NetGameRun'
+    args(project.hasProperty('netDepth') ? project.property('netDepth') : '4',
+         project.hasProperty('netClients') ? project.property('netClients') : '1',
+         project.hasProperty('netMode') ? project.property('netMode') : 'items')
+}

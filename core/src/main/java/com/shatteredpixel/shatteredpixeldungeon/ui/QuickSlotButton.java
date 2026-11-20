@@ -28,6 +28,7 @@ import com.shatteredpixel.shatteredpixeldungeon.SPDSettings;
 import com.shatteredpixel.shatteredpixeldungeon.Statistics;
 import com.shatteredpixel.shatteredpixeldungeon.actors.Actor;
 import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
+import com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopRemote;
 import com.shatteredpixel.shatteredpixeldungeon.items.Item;
 import com.shatteredpixel.shatteredpixeldungeon.items.Waterskin;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
@@ -99,7 +100,7 @@ public class QuickSlotButton extends Button {
 					Item item = select(slotNum);
 					if (Dungeon.hero.belongings.contains(item) && !GameScene.cancel()) {
 						GameScene.centerNextWndOnInvPane();
-						item.execute(Dungeon.hero);
+						CoopRemote.useItem(item, Dungeon.hero); // COOP-HOOK: online, a command
 						if (item.usesTargeting) {
 							useTargeting();
 						}

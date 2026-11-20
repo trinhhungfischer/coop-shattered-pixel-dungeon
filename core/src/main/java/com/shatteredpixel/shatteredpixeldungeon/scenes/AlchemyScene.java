@@ -21,6 +21,7 @@
 
 package com.shatteredpixel.shatteredpixeldungeon.scenes;
 
+import com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopCommands;
 import com.shatteredpixel.shatteredpixeldungeon.Assets;
 import com.shatteredpixel.shatteredpixeldungeon.Badges;
 import com.shatteredpixel.shatteredpixeldungeon.Chrome;
@@ -688,6 +689,7 @@ public class AlchemyScene extends PixelScene {
 		if (recipes.size() <= slot) return;
 
 		Recipe recipe = recipes.get(slot);
+		CoopCommands.alchemyCombine(ingredients, slot); // COOP-HOOK: online, the host brews too
 		
 		Item result = null;
 		

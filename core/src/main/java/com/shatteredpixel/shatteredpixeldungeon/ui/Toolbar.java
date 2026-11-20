@@ -30,6 +30,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Buff;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.HoldFast;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Belongings;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Talent;
+import com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopRemote;
 import com.shatteredpixel.shatteredpixeldungeon.items.Item;
 import com.shatteredpixel.shatteredpixeldungeon.items.bags.Bag;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
@@ -177,7 +178,7 @@ public class Toolbar extends Component {
 								});
 							} else {
 
-								item.execute(Dungeon.hero);
+								CoopRemote.useItem(item, Dungeon.hero); // COOP-HOOK: online, a command
 								if (item.usesTargeting) {
 									QuickSlotButton.useTargeting(idx);
 								}
@@ -462,7 +463,7 @@ public class Toolbar extends Component {
 									super.onSelect(idx, alt);
 									Item item = items.get(idx);
 									if (alt && item.defaultAction() != null) {
-										item.execute(Dungeon.hero);
+										CoopRemote.useItem(item, Dungeon.hero); // COOP-HOOK: online, a command
 									} else {
 										InventoryPane.clearTargetingSlot();
 										Game.scene().addToFront(new WndUseItem(null, item));

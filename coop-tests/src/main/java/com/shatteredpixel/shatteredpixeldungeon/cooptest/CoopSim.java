@@ -68,7 +68,24 @@ public class CoopSim {
 	static int partySize = 2;
 
 	static final List<String> problems = new ArrayList<>();
+	//other headless scenarios (e.g. LobbySim) drive the game with their own per-frame logic
+	static Runnable customDriver = null;
 	static int errorsLogged = 0;
+
+	//starts the headless game; the caller sets customDriver first
+	static void launch() throws Exception {
+		File dir = java.nio.file.Files.createTempDirectory("spd-coopsim").toFile();
+		String base = dir.getAbsolutePath().replace('\\', '/') + "/";
+		Thread.setDefaultUncaughtExceptionHandler( (t, e) -> {
+			problem("uncaught exception on " + t.getName() + ": " + stack(e).replace("\r", "").replace("\n", " | "));
+			finish();
+		});
+		Game.version = "4.0.2-INDEV-coopsim";
+		Game.versionCode = 922;
+		HeadlessApplicationConfiguration cfg = new HeadlessApplicationConfiguration();
+		cfg.updatesPerSecond = 2000;
+		new HeadlessApplication( new SimGame(base), cfg );
+	}
 
 	public static void main( String[] args ) throws Exception {
 		if (args.length > 0) seed = Long.parseLong(args[0]);
@@ -80,7 +97,7 @@ public class CoopSim {
 		String base = dir.getAbsolutePath().replace('\\', '/') + "/";
 
 		Thread.setDefaultUncaughtExceptionHandler( (t, e) -> {
-			problem("uncaught exception on " + t.getName() + ": " + stack(e));
+			problem("uncaught exception on " + t.getName() + ": " + stack(e).replace("\r", "").replace("\n", " | "));
 			finish();
 		});
 
@@ -108,7 +125,8 @@ public class CoopSim {
 		System.out.println("[SIM] ===== summary =====");
 		System.out.println("[SIM] seed=" + seed + " party=" + partySize + " depth=" + Dungeon.depth + " actions=" + Driver.actions
 				+ " saveLoads=" + Driver.reloads + " floorsDescended=" + Driver.descents
-				+ " heroSwitches=" + Driver.switches + " errorsLogged=" + errorsLogged);
+				+ " heroSwitches=" + Driver.switches + " focusSwitches=" + Driver.focusSwitches
+				+ " pausedChecks=" + Driver.pausedChecks + " errorsLogged=" + errorsLogged);
 		if (problems.isEmpty()){
 			System.out.println("[SIM] PASSED");
 		} else {
@@ -140,7 +158,7 @@ public class CoopSim {
 				@Override public void log(String tag, String message, Throwable exception) { log(tag, message + " " + stack(exception)); }
 				@Override public void error(String tag, String message) {
 					errorsLogged++;
-					problem("logged error [" + tag + "] " + message);
+					problem("logged error [" + tag + "] " + message.replace("\r", "").replace("\n", " | "));
 				}
 				@Override public void error(String tag, String message, Throwable exception) { error(tag, message + " " + stack(exception)); }
 				@Override public void debug(String tag, String message) {}
@@ -159,7 +177,8 @@ public class CoopSim {
 		public void render() {
 			HeadlessStubs.newFrame();
 			try {
-				Driver.frame();
+				if (customDriver != null) customDriver.run();
+				else Driver.frame();
 			} catch (Throwable t){
 				problem("driver crashed: " + stack(t));
 				CoopSim.finish(); //not Game.finish(), which would quietly exit with code 0
@@ -226,9 +245,20 @@ public class CoopSim {
 			}
 
 			Hero h = Dungeon.hero;
+			//with turn groups the player controls the focus hero; another group's hero can hold the
+			//pointer for a moment while it acts on its own
+			if (com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.enabled()
+					&& com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.focus() != null
+					&& h != com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.focus()){
+				if (frames - lastActionFrame > 3000){
+					problem("soft-lock: the controlled hero never got the turn back. " + state() + " | " + actorDump());
+					finish();
+				}
+				return;
+			}
 			if (!h.ready || h.curAction != null) {
 				if (frames - lastActionFrame > 3000){
-					problem("soft-lock: no hero got control for 3000 frames. " + state());
+					problem("soft-lock: no hero got control for 3000 frames. " + state() + " | " + actorDump());
 					finish();
 				}
 				return;
@@ -360,6 +390,23 @@ public class CoopSim {
 
 		static int[] expectedAfterReload = null;
 		static int sharedCellChecks = 0;
+		static boolean alignWarned = false;
+		static int fightSplitChecks = 0;
+		static int pausedDepth = -1;
+		static int pausedReloads = -1;
+
+		//true when every clock was moved down together (Actor.fixTime on save), not a paused group acting
+		//a paused hero pulled into a fight is moved up to the fight's clock (and may split off
+		//again right after the fight): its clock then equals a teammate's
+		static boolean alignedToTeammate( Hero x, float now ){
+			for (Hero o : Coop.aliveHeroes()){
+				if (o != x && Math.abs( com.shatteredpixel.shatteredpixeldungeon.actors.Actor.coopTime( o ) - now ) < 0.001f) return true;
+			}
+			return false;
+		}
+		static final java.util.HashMap<Hero, Float> pausedClock = new java.util.HashMap<>();
+		static int pausedChecks = 0;
+		static int focusSwitches = 0;
 		static Hero lastActor = null;
 		static float lastActorNow = -1;
 		static int sameTimeActions = 0;
@@ -439,6 +486,62 @@ public class CoopSim {
 				problem("active hero cannot see its own cell (FOV not updated). " + state());
 			}
 			if (Dungeon.quickslot == null) problem("quickslot is null");
+
+			//turn groups: heroes in one group share a clock, a paused group's clock stands still
+			if (com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.enabled()){
+				List<Hero> alive = Coop.aliveHeroes();
+				for (Hero x : alive){
+					for (Hero y : alive){
+						if (x == y || Coop.indexOf(x) > Coop.indexOf(y)) continue;
+						if (com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.sameGroup(x, y)){
+							float dt = Math.abs(com.shatteredpixel.shatteredpixeldungeon.actors.Actor.coopTime(x) - com.shatteredpixel.shatteredpixeldungeon.actors.Actor.coopTime(y));
+							if (dt > 6 && !alignWarned){
+								alignWarned = true;
+								problem("P" + (Coop.indexOf(x)+1) + " and P" + (Coop.indexOf(y)+1) + " share a turn group but their clocks are " + dt + " apart. " + state());
+							}
+						}
+					}
+				}
+				//heroes in the same fight (or facing an awake boss) must take turns together
+				boolean split = false;
+				String why = "";
+				for (Mob m : Dungeon.level.mobs){
+					if (!m.isAlive() || m.alignment != com.shatteredpixel.shatteredpixeldungeon.actors.Char.Alignment.ENEMY || m.state != m.HUNTING) continue;
+					boolean boss = com.shatteredpixel.shatteredpixeldungeon.actors.Char.hasProp(m, com.shatteredpixel.shatteredpixeldungeon.actors.Char.Property.BOSS);
+					Hero first = null;
+					for (Hero x : alive){
+						boolean engaged = boss || m.isTargeting(x) || (x.fieldOfView != null && m.pos < x.fieldOfView.length && x.fieldOfView[m.pos]);
+						if (!engaged) continue;
+						if (first == null) first = x;
+						else if (!com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.sameGroup(first, x)){ split = true; why = m.getClass().getSimpleName(); }
+					}
+				}
+				fightSplitChecks = split ? fightSplitChecks + 1 : 0;
+				if (fightSplitChecks == 4){
+					problem("heroes in the same fight (" + why + ") are in different turn groups. " + state());
+				}
+
+				for (Hero x : alive){
+					boolean paused = x != com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.focus() && com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.isWaiting(x) && !com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.sameGroup(x, com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.focus());
+					Float before = pausedClock.get(x);
+					float now = com.shatteredpixel.shatteredpixeldungeon.actors.Actor.coopTime(x);
+					if (paused){
+						if (pausedDepth != Dungeon.depth || pausedReloads != reloads){
+							pausedClock.clear();
+							pausedDepth = Dungeon.depth;
+							pausedReloads = reloads;
+							before = null;
+						}
+						if (before != null && now > before + 0.001f && !alignedToTeammate(x, now)){
+							problem("P" + (Coop.indexOf(x)+1) + "'s group is paused but its clock moved " + before + " -> " + now + ". " + state());
+						}
+						pausedClock.put(x, now);
+						pausedChecks++;
+					} else {
+						pausedClock.remove(x);
+					}
+				}
+			}
 		}
 
 		static final java.util.HashMap<Hero, Integer> lastPos = new java.util.HashMap<>();
@@ -591,6 +694,14 @@ public class CoopSim {
 				if (level.distance(o.pos, exit.cell()) > com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore.transitionRange(level, exit)) partyGathered = false;
 			}
 
+			//close to the stairs and they are free: stand on them first, making room for the others
+			if (!partyGathered && !onExit
+					&& level.distance(h.pos, exit.cell()) <= com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore.transitionRange(level, exit)
+					&& com.shatteredpixel.shatteredpixeldungeon.actors.Actor.findChar(exit.cell()) == null){
+				doHandle( h, exit.cell() );
+				return;
+			}
+			if (!partyGathered && switchToSeparatedTeammate( h )) return;
 			if (onExit && !partyGathered){
 				//wait for the teammate at the stairs
 				h.rest( false );
@@ -622,6 +733,19 @@ public class CoopSim {
 					}
 				}
 				if (best != -1){
+					//teammates block paths: step towards the spot and swap with a teammate in the way
+					boolean[] pass = com.watabou.utils.BArray.or( level.passable, level.avoid, null );
+					PathFinder.buildDistanceMap( best, pass );
+					int step = -1;
+					for (int i : PathFinder.NEIGHBOURS8){
+						int c = h.pos + i;
+						if (PathFinder.distance[c] < PathFinder.distance[h.pos] && (step == -1 || PathFinder.distance[c] < PathFinder.distance[step])) step = c;
+					}
+					Object inWay = step == -1 ? null : com.shatteredpixel.shatteredpixeldungeon.actors.Actor.findChar(step);
+					if (inWay instanceof Hero && inWay != h){
+						doHandle( h, step );
+						return;
+					}
 					doHandle( h, best );
 					return;
 				}
@@ -675,6 +799,23 @@ public class CoopSim {
 				farCellCache = best;
 			}
 			return farCellCache;
+		}
+
+		//DOS2 turn groups: a teammate in another group is paused until someone takes control of it
+		static boolean switchToSeparatedTeammate( Hero h ){
+			if (!com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.enabled()) return false;
+			LevelTransition exit = Dungeon.level.getTransition( LevelTransition.Type.REGULAR_EXIT );
+			for (Hero o : Coop.aliveHeroes()){
+				if (o == h || com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.sameGroup(o, h)) continue;
+				if (exit != null && Dungeon.level.distance(h.pos, exit.cell()) > 2 && actions % 9 != 0) continue;
+				//a teammate already next to the stairs doesn't need the controls
+				if (exit != null && Dungeon.level.distance(o.pos, exit.cell()) <= com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore.transitionRange(Dungeon.level, exit)) continue;
+				if (com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.requestFocus( o )){
+					focusSwitches++;
+					return true;
+				}
+			}
+			return false;
 		}
 
 		static void doHandle( Hero h, int cell ){
@@ -763,6 +904,13 @@ public class CoopSim {
 			} catch (Exception e){
 				sb.append("dump failed ").append(e);
 			}
+			//where the game logic thread is stuck
+			for (java.util.Map.Entry<Thread, StackTraceElement[]> t : Thread.getAllStackTraces().entrySet()){
+				if (!t.getKey().getName().contains("Actor")) continue;
+				sb.append(" | actor thread ").append(t.getKey().getState()).append(":");
+				StackTraceElement[] st = t.getValue();
+				for (int i = 0; i < Math.min(18, st.length); i++) sb.append(" <- ").append(st[i]);
+			}
 			return sb.toString();
 		}
 
@@ -809,12 +957,45 @@ public class CoopSim {
 			StringBuilder sb = new StringBuilder();
 			sb.append("depth=").append(Dungeon.depth).append(" actions=").append(actions)
 					.append(" active=P").append(Coop.indexOf(Dungeon.hero)+1)
-					.append(" actorProcessing=").append(com.shatteredpixel.shatteredpixeldungeon.actors.Actor.processing());
+					.append(" actorProcessing=").append(com.shatteredpixel.shatteredpixeldungeon.actors.Actor.processing())
+					.append(" focus=P").append(com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.focus() == null ? 0 : Coop.indexOf(com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.focus())+1);
+			for (Hero x : Coop.heroes()) sb.append(" t").append(Coop.indexOf(x)+1).append("=").append(com.shatteredpixel.shatteredpixeldungeon.actors.Actor.coopTime(x))
+					.append(com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.sameGroup(x, com.shatteredpixel.shatteredpixeldungeon.coop.CoopTime.focus()) ? "(f)" : "");
 			if (Dungeon.level != null){
 				LevelTransition ex = Dungeon.level.getTransition( LevelTransition.Type.REGULAR_EXIT );
 				sb.append(" locked=").append(Dungeon.level.locked);
 				if (ex != null){
 					sb.append(" exit=").append(ex.cell());
+					//the stairs' neighbourhood: '#' not standable, '.' free, 'H' hero, 'M' other char
+					int w = Dungeon.level.width();
+					sb.append(" range=").append(com.shatteredpixel.shatteredpixeldungeon.coop.CoopCore.transitionRange(Dungeon.level, ex)).append(" around=[");
+					for (int dy = -2; dy <= 2; dy++){
+						for (int dx = -2; dx <= 2; dx++){
+							int c = ex.cell() + dx + dy * w;
+							if (c < 0 || c >= Dungeon.level.length()) { sb.append(' '); continue; }
+							com.shatteredpixel.shatteredpixeldungeon.actors.Char ch = com.shatteredpixel.shatteredpixeldungeon.actors.Actor.findChar(c);
+							sb.append(ch instanceof Hero ? 'H' : ch != null ? 'M' : (Dungeon.level.passable[c] && !Dungeon.level.solid[c]) ? '.' : '#');
+						}
+						sb.append(dy < 2 ? "/" : "]");
+					}
+					sb.append(" exitTerrain=").append(Dungeon.level.map[ex.cell()]);
+					com.shatteredpixel.shatteredpixeldungeon.items.Heap onExit = Dungeon.level.heaps.get( ex.cell() );
+					if (onExit != null) sb.append(" exitHeap=").append(onExit.type).append(onExit.items.size()).append(onExit.peek().getClass().getSimpleName());
+					for (com.shatteredpixel.shatteredpixeldungeon.items.Heap heap : Dungeon.level.heaps.valueList()){
+						boolean key = false;
+						for (com.shatteredpixel.shatteredpixeldungeon.items.Item i : heap.items) if (i instanceof com.shatteredpixel.shatteredpixeldungeon.items.keys.Key) key = true;
+						if (!key) continue;
+						sb.append(" keyHeap@").append(heap.pos).append(heap.type).append("[");
+						for (com.shatteredpixel.shatteredpixeldungeon.items.Item i : heap.items){
+							Integer m = heap.coopLoot == null ? null : heap.coopLoot.looted.get(i);
+							sb.append(i.getClass().getSimpleName()).append(m == null ? "" : "~" + m).append(",");
+						}
+						sb.append("]");
+					}
+					for (int dy = -2; dy <= 2; dy++) for (int dx = -2; dx <= 2; dx++){
+						com.shatteredpixel.shatteredpixeldungeon.actors.Char ch = com.shatteredpixel.shatteredpixeldungeon.actors.Actor.findChar(ex.cell() + dx + dy * w);
+						if (ch != null && !(ch instanceof Hero)) sb.append(" M=").append(ch.getClass().getSimpleName()).append("@").append(ch.pos);
+					}
 					for (Hero h : Coop.aliveHeroes()) sb.append(" distP").append(Coop.indexOf(h)+1).append("=").append(Dungeon.level.distance(h.pos, ex.cell()));
 				}
 			}

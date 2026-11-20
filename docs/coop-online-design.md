@@ -1,0 +1,162 @@
+# Coop online: thiết kế (phase 3)
+
+> Trạng thái: **đã duyệt**. M1 (nhóm lượt trong hotseat) đã làm, code ở `coop/CoopTime.java`. Dựa trên khảo sát code v4.0.2 + phần coop hotseat đã có (phase 0–1).
+
+## 1. Mục tiêu
+
+- Mỗi người chơi một máy (desktop trước, Android sau). Một máy làm **host**, các máy khác **join** qua LAN hoặc IP.
+- Mỗi người chỉ điều khiển hero của mình và chỉ thấy tầm nhìn của hero đó (đã có từ phase 0).
+- **Mô hình thời gian kiểu Divinity: Original Sin 2**:
+  - Hero ở xa nhau, không ảnh hưởng nhau → hành động **độc lập, cùng lúc**, không ai phải chờ ai.
+  - Khi các hero **ảnh hưởng tới nhau** (gần nhau, cùng đánh một nhóm quái, cùng trong phòng boss) → gộp vào chung một **nhóm lượt** và đi theo lượt như hotseat hiện tại.
+- Giữ nguyên nguyên tắc cũ: code mới trong package `coop`, file gốc chỉ có hook `// COOP-HOOK`, solo không đổi.
+
+## 2. Những gì khảo sát cho thấy
+
+| Vấn đề | Thực tế trong code |
+|---|---|
+| Vòng lặp lượt | `Actor.process()` dùng **một đồng hồ chung** `now`; chọn actor có `time` nhỏ nhất trong một `HashSet` toàn cục. 51 chỗ thêm actor/timer, 322 lời gọi `spend`. |
+| Ngẫu nhiên | `Random` là một generator **toàn cục, không seed** khi chơi; logic (≈1400 lời gọi) và hiệu ứng hình ảnh (≈250) dùng chung, kể cả trên 2 luồng khác nhau. |
+| Thứ tự duyệt | `Actor.all`, `Level.mobs` là `HashSet` của object (hash theo địa chỉ bộ nhớ) → thứ tự khác nhau giữa các máy. |
+| Nhập lệnh | ≈150 điểm vào, gần như tất cả chạy logic **ngay trên luồng render** (dùng item, cửa sổ nâng cấp, chọn mục tiêu, talent…). |
+| Gắn kết hiển thị | Logic gọi trực tiếp sprite ≈970 chỗ, `GameScene` ≈550, `GLog` ≈610, âm thanh ≈500, hiệu ứng ≈470. Nhiều hành động chỉ kết thúc khi animation chạy xong. |
+| Lưu trữ | `Bundle` ghi/đọc được ra byte trong bộ nhớ (JSON + gzip): game ≈3 KB, một tầng ≈2–15 KB. |
+| Mạng | Chưa có gì (chỉ HTTP cho tin tức/cập nhật). |
+
+## 3. Kiến trúc mạng: chọn **host-authoritative**
+
+### Phương án A: lockstep (mọi máy cùng mô phỏng, chỉ gửi lệnh), **không chọn**
+Muốn mọi máy ra kết quả giống hệt nhau thì phải:
+- tách RNG logic khỏi RNG hiệu ứng ở hàng trăm chỗ. Có cả những chỗ "chỉ tạo hiệu ứng nếu ô đó nằm trong tầm nhìn", nên RNG bị rút khác nhau trên mỗi máy vì mỗi người có tầm nhìn riêng;
+- đổi mọi `HashSet` actor/mob sang thứ tự cố định (≈100 khai báo);
+- biến ≈150 điểm nhập lệnh trên luồng render thành lệnh chạy ở cùng một thời điểm trên mọi máy.
+
+Việc này sửa sâu vào hàng trăm file gốc, đi ngược nguyên tắc "merge rẻ", và rất dễ lệch (desync) âm thầm.
+
+### Phương án B: host-authoritative, **đề xuất**
+- **Host** chạy game thật như hotseat hiện tại: mọi hero, quái, RNG đều nằm trên host. Host là nguồn sự thật duy nhất, nên không bao giờ desync.
+- **Client** là một "màn hình từ xa" có game scene riêng nhưng **không chạy logic**:
+  1. **Snapshot**: khi join hoặc đổi tầng, client nhận `Bundle` của tầng và các hero (vài chục KB), rồi dựng scene từ đó.
+  2. **Luồng sự kiện**: host bắt sự kiện ở vài "nút thắt" (`CharSprite` move/attack/zap/die/status, các lớp hiệu ứng, `GLog`, âm thanh, cập nhật ô/đống đồ/fog), gửi kèm id nhân vật. Client phát lại trên sprite của mình, nên animation giống hệt host.
+  3. **Đồng bộ trạng thái nhẹ** sau mỗi lượt: HP, vị trí, buff của các nhân vật trong tầm nhìn, túi đồ và quickslot của hero mình. Thỉnh thoảng gửi lại snapshot đầy đủ để tự sửa sai lệch.
+- **Lệnh từ client**: bấm ô, dùng item (id item + action + mục tiêu), chọn trong cửa sổ… Host chạy lệnh đúng như khi UI gọi. Cửa sổ chọn lựa (nâng cấp, chọn item, quest) **mở trên máy client** (client có bản sao túi đồ), rồi gửi kết quả về host.
+- Hook ở các nút thắt thì ít: khoảng vài chục điểm, thay vì hàng trăm.
+
+**Đánh đổi:** client có độ trễ đúng bằng một vòng gửi-nhận với host (LAN thì không đáng kể); các cửa sổ chọn lựa phải viết "adapter" dần dần.
+
+## 4. Mô hình thời gian kiểu DOS2: "nhóm lượt" (time bubble)
+
+- Mỗi hero thuộc một **nhóm lượt**, và mỗi nhóm có **đồng hồ riêng** (`now` riêng).
+- **Ngoài combat các hero luôn tự do**, kể cả khi đứng cạnh nhau (như DOS2).
+- **Hai hero liên kết** (chung nhóm) khi có ít nhất một điều kiện:
+  1. **cùng bị kéo vào một trận đánh**, giống combat của DOS2: một hero *tham gia* trận với một con quái đang săn khi con quái nhắm vào hero đó, hoặc hero nhìn thấy nó, hoặc hero vừa đánh trúng nó. Mọi hero tham gia cùng một con quái thì chung nhóm, dù đứng xa nhau, **hoặc**
+  2. có **boss còn sống và đã tỉnh** trên tầng: aggro của boss phủ cả tầng, nên cả đội đi theo lượt chung, **hoặc**
+  3. cùng trong một tầng boss đang khóa (arena).
+  - Không dùng bán kính trận: ai **thấy** trận mới bị kéo vào, nên người ở phòng bên cạnh, cách tường, không bị khóa lượt mà không hiểu vì sao.
+  - Liên kết có tính bắc cầu: A–B và B–C thì cả ba chung một nhóm.
+  - Trong một nhóm, lượt đi đúng theo thứ tự thời gian như hotseat. Ai đang chờ lệnh thì đó là lượt của người đó.
+- **Quái và vật thể** thuộc nhóm của hero gần nhất hoặc hero nó đang săn. Quái ở chỗ không có hero nào thì đứng yên, cho tới khi một nhóm tới gần.
+- **Actor toàn tầng** (khí độc, lửa, bộ hồi sinh quái, timer) chạy theo **đồng hồ tầng** = đồng hồ của nhóm đang đi trước nhất, để không chạy nhanh gấp đôi.
+- **Lịch chạy:** host cho từng nhóm chạy **độc lập**. Nhóm nào có hero vừa nhận lệnh thì chạy tới khi hero đó cần lệnh tiếp. Nhóm đang chờ người chơi thì tạm dừng, không chặn nhóm khác.
+- **Gộp nhóm:** khi hai nhóm liên kết lại, nhóm có đồng hồ chậm hơn được **dời thời gian** cho bằng nhóm kia, giữ nguyên thứ tự lượt bên trong. **Chỉ đồng hồ thay đổi**: buff của hero (hunger, hồi máu, nạp charge của wand/artifact, thời hạn buff) được dời cùng, nên không có gì được tính cho khoảng thời gian bị bỏ qua. Từ lúc đó cả nhóm đi theo lượt như hotseat.
+- **Tách nhóm:** khi không còn điều kiện liên kết (đi xa, hết quái), mỗi hero lại có đồng hồ riêng.
+- Luật cầu thang giữ nguyên: cả đội phải đứng sát cầu thang mới xuống được (không cần chung nhóm lượt).
+
+Phần này làm và kiểm thử **trong hotseat trước** (bot headless), rồi mới gắn mạng. Vì vậy lỗi về thời gian không bị lẫn với lỗi mạng.
+
+## 5. Milestone
+
+| # | Nội dung | Kiểm thử |
+|---|---|---|
+| M1 | Nhóm lượt kiểu DOS2 trong hotseat: mỗi nhóm một đồng hồ, liên kết/gộp/tách, đồng hồ tầng | bot headless: 2–4 hero tách xa thì đi độc lập, vào combat thì gộp; save/load giữ đúng đồng hồ |
+| M2 | Tầng mạng + lobby: host/join qua IP hoặc LAN, giao thức tin nhắn (Bundle JSON nén), ping, ngắt kết nối | test 2 tiến trình headless trên cùng máy |
+| M3 | Client "màn hình từ xa": snapshot, sự kiện sprite/hiệu ứng/log/âm thanh, fog theo hero mình; lệnh di chuyển/đánh/nhặt/cầu thang | 1 host + 1 client headless chơi tới tầng 5, so trạng thái client với host |
+| M4 | Túi đồ, quickslot, dùng item, chọn mục tiêu (wand, ném, spell), cửa sổ nâng cấp/chọn item | như trên + kịch bản dùng item |
+| M5 | Quest, shop, alchemy, talent, armor ability, nối lại khi rớt mạng, snapshot sửa lệch | chơi tay qua LAN |
+
+**Trạng thái M4 (đã xong):**
+- Mọi lệnh dùng item từ UI (túi, quickslot, menu chuột phải, cửa sổ item) đi qua `CoopRemote.useItem`. Online, lệnh thành một task chạy trên render thread của host trong lúc actor thread dừng ở điểm an toàn.
+- Item được gọi tên giống nhau ở host và client qua `CoopItems`: ô trang bị là `w/a/f/m/r/s`, đồ trong túi là `i:<class>|<level>|<số lượng>|<thứ tự>`. Không dùng vị trí trong túi, vì túi trên client có thể xếp khác.
+- Khi lệnh của hero ở xa cần chọn lựa, host chuyển câu hỏi cho đúng người chơi đó:
+  - chọn ô (`pcell`), chọn item (`pitem`);
+  - `WndOptions` (`popt`);
+  - cửa sổ khác (ví dụ WndUpgrade): gom chữ và nút thành một câu hỏi `popt`, rồi bấm đúng nút đó trên cửa sổ không hiển thị ở host.
+- Quickslot của client được giữ theo đường dẫn item mỗi lần nhận lại túi đồ từ host.
+- Kiểm thử bằng `netGameSim`: client là Mage, bắn trượng (chọn ô), đọc Scroll of Upgrade (chọn item, rồi cửa sổ nâng cấp). Trượng lên +1 và checksum không lệch.
+
+**Trạng thái M5 (đã xong):**
+- **NPC, quest, shop:** nhiều cửa sổ được mở trễ một nhịp qua `Game.runOnRenderThread`. Hook `Game.callbackWrapper` ghi lại hero đang hành động lúc đó. Nếu là hero ở xa, callback chạy như một task của hero ấy, nên cửa sổ đi tới đúng người chơi.
+  - Cửa sổ có nút item (phần thưởng của Ghost, Wandmaker, Blacksmith) cũng được chuyển, nút mang tên item.
+  - Cửa sổ không có nút (lời quest, lời shopkeeper) hiện với một nút OK.
+  - Bấm Back trên client gọi `onBackPressed` của cửa sổ trên host.
+  - Cửa sổ chặn lại không bắt phím của host và không giữ camera.
+- **Vàng và năng lượng giả kim** dùng chung cho cả đội và được gửi trong mỗi bản cập nhật.
+- **Talent:** `TalentButton` gọi `CoopCommands.upgradeTalent`. Client gửi lệnh `talent`, host kiểm tra điểm còn lại rồi mới nâng. Bản sao hero trên client nhận cả talent, subclass và armor ability từ host.
+  - Chọn subclass (Tengu mask) và armor ability (King's crown) đi qua chuyển cửa sổ chung.
+- **Alchemy:**
+  - Khi hero ở xa tới nồi alchemy (hoặc dùng toolkit, spirit form), host không đổi scene mà gửi `alchopen`, và màn hình alchemy mở trên máy người chơi đó.
+  - Mỗi lần trộn, client gửi `alchemy` kèm loại, cấp và số lượng nguyên liệu. Host tìm đúng đồ trong túi hero, kiểm tra công thức và năng lượng rồi tự nấu.
+  - Client vẫn nấu trên bản sao để hiện kết quả. Túi đồ thật từ host thay vào khi người chơi quay lại game.
+  - Năng lượng hoá (energize) cũng là một lệnh.
+  - Khi chính người chơi host dùng alchemy, game dừng với mọi người và các client được báo.
+- **Nối lại khi rớt mạng:**
+  - Mỗi người chơi nhận một token bí mật trong `welcome`. Nếu rớt sau khi run bắt đầu, host giữ slot của họ.
+  - Client tự thử nối lại mỗi 2 giây trong 60 giây với slot và token. Host trả slot rồi gửi snapshot riêng cho người đó, cùng `seq`, nên người khác không phải tải lại.
+  - Trong lúc mất kết nối, nếu hero của người đó đang chung nhóm lượt với ai, nó tự chờ một lượt mỗi khi tới phiên, để trận đánh không bị treo.
+- **Kiểm thử:** `netGameSim -PnetDepth=4`. Client nhận điểm talent, nói chuyện với shopkeeper (menu, lời nói, cửa sổ mua), mua bình máu (mất 150 vàng), tự ngắt mạng rồi nối lại, sau đó nấu 3 hạt giống thành thuốc. Mọi kết quả được đối chiếu với host.
+
+**Sau M5:**
+- **Khí và vùng hiệu ứng trên sàn (Blob):** mỗi bản cập nhật gửi danh sách ô và cường độ của từng loại blob, chỉ khi có thay đổi. Client tạo blob nếu chưa có và chỉ vẽ nó, không bao giờ cho nó hành động.
+- **Đạn bay và đạn phép:** hook ở `MissileSprite.reset` và `MagicMissile.reset` (bản dùng `PointF`) gửi toạ độ điểm đầu và điểm cuối. Client vẽ lại mà không có callback.
+- **Click của người chơi host:** `ui.Button` gọi `CoopRemote.uiClick`. Khi online và đang ở `GameScene`, click chạy như một task lúc logic game dừng ở điểm an toàn, giống thao tác chạm bản đồ. Host đang là khán giả (hero đã chết) thì click chạy ngay.
+- **Metamorphosis:** nút talent cũng được chuyển (nhãn là tên talent). Cả bốn bước (chọn talent, xác nhận, chọn talent thay thế, xác nhận) đều hiện trên máy người chơi.
+
+**Rà soát và kiểm thử thêm (lỗi đã sửa):**
+- **Chỉ còn một hero sống:** online vẫn dùng nhóm lượt (`CoopTime.enabled()`). Trước đây vòng lặp lượt bị giữ trong lượt của hero đó, nên mọi lệnh và mọi cập nhật đều dừng hẳn.
+- **Ankh của hero ở xa:**
+  - Cửa sổ hồi sinh tới đúng người chơi; lúc game đang chờ lựa chọn này, task vẫn chạy được.
+  - `Dungeon.hero` được giữ ở hero đang hồi sinh cho tới khi `InterlevelScene` chạy xong.
+  - Cửa sổ vẫn mở sau một lựa chọn (như WndResurrect) thì được gửi lại cho người chơi.
+- **Kiểm tra lệnh:**
+  - Dùng item chỉ được khi tới lượt.
+  - Câu trả lời phải là lựa chọn có trong cửa sổ và đang bật.
+  - Ô được chọn phải nằm trong bản đồ.
+  - Năng lượng hoá chỉ được khi đang mở alchemy.
+- **Lệnh của tầng cũ:** mỗi lệnh của client mang `seq` của snapshot nó được tạo ra. Host bỏ lệnh thuộc tầng cũ và xoá các câu hỏi cũ khi đổi tầng.
+- **Thử lại nút chưa bật:** mỗi lần thử ở một điểm an toàn khác nhau (trước đây cả 300 lần đều chạy trong cùng một frame).
+- **Nối lại:**
+  - Host nhận kết nối mới của đúng slot và token, kể cả khi chưa nhận ra kết nối cũ đã chết.
+  - Client bị từ chối trong lúc nối lại thì thử tiếp cho tới hết hạn.
+  - Host thoát game thì client không cố nối lại.
+- **Mạng:** mỗi kết nối có luồng ghi và hàng đợi riêng. Một client bị nghẽn không làm treo host; quá 32 MB chưa gửi được thì đóng kết nối đó.
+- **Kiểm thử mới:**
+  - `netGameSim -PnetClients=2`: 3 người chơi.
+  - `netGameSim -PnetMode=deaths`: chết khi có Ankh, hồi sinh, chết hẳn, rồi host chơi một mình.
+- **Hero khán giả khi đổi tầng:** hero đã chết đi theo tới ô party đến. Trước đây nó giữ ô của tầng cũ, có thể nằm ngoài bản đồ mới, và code đọc ô của hero đó (màn hình của client đang làm khán giả) bị lỗi vượt chỉ số.
+- **Hồi sinh nhầm hero (host bị kẹt hoặc crash):** khoảng 1 trên 20 lần, client chọn hồi sinh xong thì host hồi sinh hero của chính mình. Hero của client vẫn 0 HP, không có sprite, và khi tới lượt nó thì `Hero.ready()` văng NullPointerException hoặc game đứng hẳn. `InterlevelScene` hồi sinh hero mà `Dungeon.hero` đang trỏ tới, và có ba đường kéo con trỏ khỏi hero đang hồi sinh:
+  - Các task xếp sau câu trả lời vẫn chạy trong cùng frame, ví dụ một lần bấm của host. Giờ khi đang chuyển scene thì không chạy thêm task nào; chúng sẽ chạy ở scene sau.
+  - Luồng actor được thả ra khỏi điểm park rồi cho một actor chạy lượt (`Hero.act` đặt con trỏ về hero đang hành động). Giờ luồng actor chờ tới khi scene đổi xong.
+  - Trong lúc chờ lựa chọn hồi sinh, con trỏ bị trả về hero của host. `GameScene` thấy hero đó còn sống nên đánh thức luồng actor. Giờ con trỏ ở lại hero đang chờ hồi sinh, game dừng giống bản solo.
+- **Dừng hero đang đi hoặc đang nghỉ:** ở bản solo, bấm vào màn hình khi hero đang bận (`GameScene.cancel()`) sẽ dừng hero. Trên client, cú bấm đó chỉ dừng hero trên mirror, mà mirror thì không tự đi, nên hero thật trên host vẫn đi tới đích hoặc nghỉ cho tới khi đầy máu. Giờ client gửi lệnh `stop`, mỗi lệnh đang chạy một lần. Ngược lại, khi người chơi host bấm huỷ đúng lúc đồng đội đang tới lượt, `Dungeon.hero` đang là hero đồng đội; trước đây hành động bị huỷ là của đồng đội, giờ là của hero host.
+- **Nhận diện item:** loại potion, scroll, ring nào đã biết là trạng thái chung của cả game, không nằm trong hero, nên trước đây client chỉ biết khi xuống tầng mới. Ví dụ ring đã nhận diện bằng scroll mà client vẫn thấy "chưa rõ". Giờ bản cập nhật mang theo trạng thái này mỗi khi nó đổi.
+- **Kiểm thử mới `netGameSim -PnetMode=actions`** (một client): 16 thao tác nhỏ, mỗi thao tác kiểm tra riêng trên mirror của client: ăn, hai lệnh dùng item gửi trong cùng một lượt (chỉ tính một), dừng nghỉ, dừng đi đường dài, uống, mặc giáp, vứt rồi nhặt lại, ném (prompt chọn ô) rồi nhặt lại, huỷ một cú zap, câu trả lời cũ không có tác dụng, lệnh cho item không tồn tại, tìm kiếm, scroll dịch chuyển, nhận diện (prompt chọn item).
+- **Sửa test:**
+  - Khí độc được thả ở tầng 3, xa shopkeeper, sau khi client đã rời màn hình alchemy (ở màn hình đó client không nhận bản cập nhật). Party chờ ở tầng 3 cho tới khi client kịp thấy khí. Shopkeeper bị khí hại lần đầu thì dọn sạch khí quanh nó, lần sau thì bỏ chạy và huỷ hàng, giống luật gốc.
+  - Mua xong thì shopkeeper rời đi. Đứng trong hành lang nó chắn đường bot, và bot va lại vào nó sẽ mở menu shop rồi bán mất đồ.
+  - Chế độ deaths: party ở lại tầng 2 cho tới khi kịch bản chết xong. Sau đó host chơi một mình một lúc là đủ, không cần xuống tới tầng đích.
+  - Lỗi trên luồng actor được in kèm stack.
+  - Kịch bản chết chờ cú giết thật sự xảy ra rồi mới kiểm tra hồi sinh.
+  - Log giữ đủ dòng PROBLEM, có stack của luồng actor.
+
+**Hạn chế còn lại:**
+- Kết quả alchemy ngẫu nhiên có thể hiện khác trên màn hình client cho tới khi túi đồ thật từ host về.
+- Khi người chơi host dùng alchemy, game dừng với mọi người.
+- Nhấn giữ (long click) của host vẫn chạy ngay, vì game cần kết quả trả về của nó ngay lúc đó.
+- Các hiệu ứng nhỏ khác (tia sét, tia sáng, hạt bụi, rung màn hình) chưa hiện trên client.
+- Bot của test không biết lấy chìa để mở cửa khoá và đôi khi lên xuống cầu thang lung tung. Khi chạy nhiều test song song (máy tải nặng), có lần bot không tới được tầng đích. Đây là giới hạn của bot, không phải lỗi game: chạy lại trên code trước bản sửa với cùng mức tải cũng fail y như vậy.
+
+## 6. Rủi ro chính
+
+- Một số hành động chỉ kết thúc khi animation xong. Host vẫn phải chạy animation (headless được, như bộ test hiện tại), nên không ảnh hưởng client.
+- Cửa sổ chọn lựa nhiều, mỗi loại cần adapter. Làm dần theo mức độ hay dùng.
+- Mô hình nhóm lượt chạm vào `Actor.process`, file cốt lõi. Mình sẽ giữ hook nhỏ và đặt logic trong `coop/CoopTime.java`.

@@ -47,6 +47,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Ghoul;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mimic;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Snake;
+import com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopRemote;
 import com.shatteredpixel.shatteredpixeldungeon.effects.BannerSprites;
 import com.shatteredpixel.shatteredpixeldungeon.effects.BlobEmitter;
 import com.shatteredpixel.shatteredpixeldungeon.effects.CheckedCell;
@@ -909,7 +910,9 @@ public class GameScene extends PixelScene {
 			waterOfs = water.offsetY(); //re-assign to account for auto adjust
 		}
 
-		if (!Actor.processing() && Dungeon.hero.isAlive()) {
+		CoopRemote.clientFrame(); // COOP-HOOK: an online client applies the host's updates
+		CoopRemote.hostRenderFrame(); // COOP-HOOK: an online host runs players' commands
+		if (!Actor.processing() && Dungeon.hero.isAlive() && !CoopRemote.onlineClient()) { // COOP-HOOK: clients run no game logic
 			if (actorThread == null || !actorThread.isAlive()) {
 				
 				actorThread = new Thread() {
@@ -969,7 +972,7 @@ public class GameScene extends PixelScene {
 
 		}
 
-		cellSelector.enable(Dungeon.hero.ready);
+		cellSelector.enable(CoopRemote.inputReady()); // COOP-HOOK: was Dungeon.hero.ready
 
 		if (!toDestroy.isEmpty()) {
 			for (Gizmo g : toDestroy) {
@@ -1469,6 +1472,7 @@ public class GameScene extends PixelScene {
 	}
 	
 	public static void show( Window wnd ) {
+		if (CoopRemote.interceptWindow( wnd )) return; // COOP-HOOK: a remote hero's player chooses
 		if (scene != null) {
 			cancel();
 
@@ -1675,6 +1679,8 @@ public class GameScene extends PixelScene {
 	}
 	
 	public static void selectCell( CellSelector.Listener listener ) {
+		if (CoopRemote.interceptCell( listener )) return; // COOP-HOOK: a remote hero's player chooses
+		listener = CoopRemote.localCell( listener ); // COOP-HOOK
 		if (cellSelector.listener != null && cellSelector.listener != defaultCellListener){
 			cellSelector.listener.onSelect(null);
 		}
@@ -1696,6 +1702,8 @@ public class GameScene extends PixelScene {
 	}
 	
 	public static WndBag selectItem( WndBag.ItemSelector listener ) {
+		if (CoopRemote.interceptItem( listener )) return null; // COOP-HOOK: a remote hero's player chooses
+		listener = CoopRemote.localItem( listener ); // COOP-HOOK
 		cancel();
 
 		if (scene != null) {
@@ -1752,6 +1760,8 @@ public class GameScene extends PixelScene {
 
 	public static boolean cancel() {
 		cellSelector.resetKeyHold();
+		Boolean coopStopped = CoopRemote.onCancel(); // COOP-HOOK: online, the player's own hero stops
+		if (coopStopped != null) return coopStopped || cancelCellSelector(); // COOP-HOOK
 		if (Dungeon.hero != null && (Dungeon.hero.curAction != null || Dungeon.hero.resting)) {
 			
 			Dungeon.hero.curAction = null;
@@ -1879,6 +1889,7 @@ public class GameScene extends PixelScene {
 	private static final CellSelector.Listener defaultCellListener = new CellSelector.Listener() {
 		@Override
 		public void onSelect( Integer cell ) {
+			if (CoopRemote.onCellSelected( cell )) return; // COOP-HOOK: online, taps become commands
 			if (Dungeon.hero.handle( cell )) {
 				Dungeon.hero.next();
 			}

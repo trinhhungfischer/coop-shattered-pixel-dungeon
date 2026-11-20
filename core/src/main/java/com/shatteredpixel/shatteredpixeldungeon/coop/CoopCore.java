@@ -139,6 +139,16 @@ public class CoopCore {
 		if (!Coop.active()) return;
 		Coop.setActive( h );
 		ensureOwnFOV( h );
+		//the screen shows this hero's own sight: when it gets the turn back while already waiting
+		//for input, Hero.act doesn't observe again, so its last view must be shown here
+		Level level = Dungeon.level;
+		if (level != null && h.fieldOfView != level.heroFOV && h.fieldOfView.length == level.heroFOV.length){
+			System.arraycopy( h.fieldOfView, 0, level.heroFOV, 0, h.fieldOfView.length );
+			GameScene.updateFog();
+			GameScene.afterObserve();
+			CoopVision.updateTeammateSprites();
+		}
+		CoopTime.onHeroAct( h );
 	}
 
 	//called after a resting hero recomputed only its own FOV: keep the screen's FOV in sync
@@ -320,6 +330,7 @@ public class CoopCore {
 	public static void onGameLoaded(){
 		fovs.clear();
 		keepPositions = Coop.active();
+		com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopRemote.afterGameLoaded();
 	}
 
 	// ---------------------------------------------------------------------------------
@@ -343,6 +354,12 @@ public class CoopCore {
 		if (!Coop.active()) return;
 
 		fovs.clear();
+
+		//spectators come along too: a cell of the previous level could be outside this one's map
+		//(a spectating client's screen and anything reading its hero's cell)
+		for (Hero h : Coop.heroes()){
+			if (h != Dungeon.hero && (Coop.isDead( h ) || !h.isAlive())) h.pos = pos;
+		}
 
 		HashSet<Integer> taken = new HashSet<>();
 		taken.add(pos);
@@ -408,6 +425,12 @@ public class CoopCore {
 	//call in switchLevel after Actor.init(): pushes mobs off cells occupied by other heroes
 	public static void displaceMobsFromParty( Level level ){
 		if (!Coop.active()) return;
+		//every hero sees the new level right away: a field of view left over from the previous
+		//level has the wrong size and would make turn groups read cells of the old map
+		for (Hero h : Coop.aliveHeroes()){
+			ensureOwnFOV( h );
+			level.updateFieldOfView( h, h.fieldOfView );
+		}
 		for (Hero h : Coop.aliveHeroes()){
 			if (h == Dungeon.hero) continue;
 			for (Mob m : level.mobs){
@@ -451,12 +474,14 @@ public class CoopCore {
 		return range;
 	}
 
-	//a hero right next to stairs that a teammate stands on can take them too (instead of swapping)
+	//a hero close enough to the stairs (within the gathering range) can take them while a teammate
+	//stands on them, instead of swapping places with that teammate
 	public static boolean nextToTeammateOnStairs( Hero h, LevelTransition t ){
 		if (!Coop.active() || t == null) return false;
 		Level level = Dungeon.level;
+		if (distanceTo( level, t, h.pos ) > transitionRange( level, t )) return false;
 		for (Hero o : Coop.aliveHeroes()){
-			if (o != h && t.inside(o.pos) && level.adjacent(h.pos, o.pos)) return true;
+			if (o != h && t.inside(o.pos)) return true;
 		}
 		return false;
 	}

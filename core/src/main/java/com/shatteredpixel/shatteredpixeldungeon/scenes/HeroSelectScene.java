@@ -32,6 +32,7 @@ import com.shatteredpixel.shatteredpixeldungeon.ShatteredPixelDungeon;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.HeroClass;
 import com.shatteredpixel.shatteredpixeldungeon.coop.CoopHeroSelect;
 import com.shatteredpixel.shatteredpixeldungeon.coop.CoopSetup;
+import com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopLobbyScene;
 import com.shatteredpixel.shatteredpixeldungeon.coop.CoopUI;
 import com.shatteredpixel.shatteredpixeldungeon.journal.Journal;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
@@ -850,6 +851,19 @@ public class HeroSelectScene extends PixelScene {
 			coopButton.icon().brightness(CoopHeroSelect.players > 1 ? 1f : 0.6f);
 			add(coopButton);
 			buttons.add(coopButton);
+
+			// COOP-HOOK: online coop lobby (host or join a game over the network)
+			StyledButton onlineButton = new StyledButton(Chrome.Type.BLANK, Messages.get(CoopLobbyScene.class, "open"), 6){
+				@Override
+				protected void onClick() {
+					super.onClick();
+					ShatteredPixelDungeon.switchScene(CoopLobbyScene.class);
+				}
+			};
+			onlineButton.leftJustify = true;
+			onlineButton.icon(new Image(HeroClass.MAGE.spritesheet(), 0, 90, 12, 15));
+			add(onlineButton);
+			buttons.add(onlineButton);
 
 			int unlockedCount = 0;
 			for (HeroClass cls : HeroClass.values()){

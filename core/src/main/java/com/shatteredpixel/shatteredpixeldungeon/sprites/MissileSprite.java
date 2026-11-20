@@ -24,6 +24,7 @@ package com.shatteredpixel.shatteredpixeldungeon.sprites;
 import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.spells.HolyLance;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.GnollGeomancer;
+import com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopRemote;
 import com.shatteredpixel.shatteredpixeldungeon.items.Item;
 import com.shatteredpixel.shatteredpixeldungeon.items.weapon.SpiritBow;
 import com.shatteredpixel.shatteredpixeldungeon.items.weapon.melee.Crossbow;
@@ -76,6 +77,7 @@ public class MissileSprite extends ItemSprite implements Tweener.Listener {
 	}
 
 	public void reset( PointF from, PointF to, Item item, Callback listener) {
+		CoopRemote.missileEvent( item, from.x, from.y, to.x, to.y ); // COOP-HOOK: online clients draw it too
 		revive();
 
 		if (item == null)   view(0, null);

@@ -183,6 +183,8 @@ public class PartyPane extends Component {
 
 		@Override
 		protected void onClick() {
+			//a teammate in another turn group: take control of them (the game is waiting for input)
+			if (Dungeon.hero != null && Dungeon.hero.ready) CoopTime.requestFocus( hero );
 			if (hero.sprite != null && hero.sprite.parent != null){
 				Camera.main.panTo(hero.sprite.center(), 5f);
 			}

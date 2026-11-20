@@ -30,6 +30,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Talent;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.abilities.cleric.Trinity;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Wraith;
+import com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopCommands;
 import com.shatteredpixel.shatteredpixeldungeon.items.armor.ClassArmor;
 import com.shatteredpixel.shatteredpixeldungeon.items.artifacts.AlchemistsToolkit;
 import com.shatteredpixel.shatteredpixeldungeon.items.artifacts.Artifact;
@@ -194,6 +195,7 @@ public class SpiritForm extends ClericSpell {
 	public static void applyActiveArtifactEffect(ClassArmor armor, Artifact effect){
 		if (effect instanceof AlchemistsToolkit){
 			Talent.onArtifactUsed(Dungeon.hero);
+			if (CoopCommands.openAlchemy(Dungeon.hero, (AlchemistsToolkit) effect)) return; // COOP-HOOK: opens on that player's screen
 			AlchemyScene.assignToolkit((AlchemistsToolkit) effect);
 			Game.switchScene(AlchemyScene.class);
 

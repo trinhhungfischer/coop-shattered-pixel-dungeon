@@ -23,6 +23,7 @@ package com.shatteredpixel.shatteredpixeldungeon.ui;
 
 import com.shatteredpixel.shatteredpixeldungeon.Chrome;
 import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
+import com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopRemote;
 import com.shatteredpixel.shatteredpixeldungeon.items.Item;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
 import com.shatteredpixel.shatteredpixeldungeon.scenes.GameScene;
@@ -126,7 +127,7 @@ public class RightClickMenu extends Component {
 						GameScene.nextWndOffset(childOffset);
 					}
 					if (item != null){
-						item.execute(Dungeon.hero, options[finalI]);
+						CoopRemote.useItem(item, Dungeon.hero, options[finalI]); // COOP-HOOK: online, a command
 
 						if (options[finalI].equals(item.defaultAction()) && item.usesTargeting){
 							InventoryPane.useTargeting();

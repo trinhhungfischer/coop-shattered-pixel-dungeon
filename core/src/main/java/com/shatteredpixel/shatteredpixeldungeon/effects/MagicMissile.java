@@ -22,6 +22,7 @@
 package com.shatteredpixel.shatteredpixeldungeon.effects;
 
 import com.shatteredpixel.shatteredpixeldungeon.actors.Actor;
+import com.shatteredpixel.shatteredpixeldungeon.coop.net.CoopRemote;
 import com.shatteredpixel.shatteredpixeldungeon.effects.particles.BloodParticle;
 import com.shatteredpixel.shatteredpixeldungeon.effects.particles.CorrosionParticle;
 import com.shatteredpixel.shatteredpixeldungeon.effects.particles.ElmoParticle;
@@ -115,6 +116,7 @@ public class MagicMissile extends Emitter {
 	}
 
 	public void reset( int type, PointF from, PointF to, Callback callback ) {
+		CoopRemote.boltEvent( type, from.x, from.y, to.x, to.y ); // COOP-HOOK: online clients draw it too
 		this.callback = callback;
 		
 		this.to = to;
